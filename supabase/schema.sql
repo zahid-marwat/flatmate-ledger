@@ -4,10 +4,12 @@ create extension if not exists pgcrypto;
 
 do $$
 begin
-  create type house_role as enum ('manager', 'flatmate', 'viewer');
+  create type house_role as enum ('admin', 'manager', 'flatmate', 'viewer');
 exception
   when duplicate_object then null;
 end $$;
+
+alter type house_role add value if not exists 'admin' before 'manager';
 
 do $$
 begin
@@ -136,6 +138,7 @@ create table if not exists public.expenses (
   created_by uuid references public.users(id) on delete set null,
   approved_by uuid references public.users(id) on delete set null,
   paid_by_user_id uuid references public.users(id) on delete set null,
+  payer_contributions_json jsonb not null default '[]'::jsonb,
   category_id uuid references public.categories(id) on delete set null,
   title text not null,
   note text,
@@ -151,6 +154,12 @@ create table if not exists public.expenses (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.expenses
+  add column if not exists paid_by_user_id uuid references public.users(id) on delete set null;
+
+alter table public.expenses
+  add column if not exists payer_contributions_json jsonb not null default '[]'::jsonb;
 
 create table if not exists public.expense_splits (
   id uuid primary key default gen_random_uuid(),
@@ -348,7 +357,7 @@ as $$
     where hm.house_id = house_uuid
       and hm.user_id = auth.uid()
       and hm.status = 'active'
-      and hm.role = 'manager'
+      and hm.role::text in ('admin', 'manager')
   );
 $$;
 

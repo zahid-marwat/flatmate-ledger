@@ -72,6 +72,21 @@ function ensureHouseAccess(houseId, userId) {
   return member;
 }
 
+function isManagementRole(role) {
+  return ["admin", "manager"].includes(role);
+}
+
+function getHouseRole(houseId, userId) {
+  return store.houseMembers.get(`${houseId}:${userId}`)?.role || null;
+}
+
+function getPrimaryManagementRole(userId) {
+  const membership = [...store.houseMembers.values()].find(
+    (member) => member.userId === userId && member.status === "active" && isManagementRole(member.role),
+  );
+  return membership?.role || "manager";
+}
+
 function getHouseSummary(houseId) {
   const house = store.houses.get(houseId);
   if (!house) throw new ApiError(404, "House not found");
@@ -130,13 +145,51 @@ async function handleCreatePasswordUser(request) {
     throw new ApiError(403, "Invalid admin setup key");
   }
 
-  return jsonResponse({
-    user: await authService.createPasswordUser({
-      contact: requireString(body.contact, "contact"),
-      fullName: requireString(body.fullName, "fullName"),
-      password: requireString(body.password, "password"),
-    }),
-  }, 201);
+  const role = requireOneOf(body.role || "flatmate", "role", ["admin", "manager", "flatmate", "viewer"]);
+  const result = await authService.createPasswordUser({
+    contact: requireString(body.contact, "contact"),
+    fullName: requireString(body.fullName, "fullName"),
+    password: requireString(body.password, "password"),
+    role,
+  });
+
+  if (isManagementRole(role)) {
+    const hasManagerMembership = [...store.houseMembers.values()].some(
+      (member) => member.userId === result.user.id && isManagementRole(member.role) && member.status === "active",
+    );
+    if (!hasManagerMembership) {
+      const houseName = `${result.user.fullName.split(" ")[0] || "My"} House`;
+      await houseService.createHouse({
+        creatorUserId: result.user.id,
+        name: houseName,
+        address: null,
+        city: null,
+        baseCurrency: "PKR",
+        timezone: "Asia/Karachi",
+        creatorRole: role,
+      });
+    }
+  } else {
+    const firstHouse = [...store.houses.values()][0];
+    if (firstHouse) {
+      const member = {
+        id: store.createId(),
+        houseId: firstHouse.id,
+        userId: result.user.id,
+        role,
+        status: "active",
+        joinedAt: new Date().toISOString(),
+        leftAt: null,
+        roomName: null,
+        phoneDisplay: result.user.phone || result.user.email || result.user.contact,
+        isDefaultPayer: false,
+      };
+      store.houseMembers.set(`${firstHouse.id}:${result.user.id}`, member);
+      await persistence.saveHouseMember(member);
+    }
+  }
+
+  return jsonResponse(result, 201);
 }
 
 async function handlePasswordLogin(request) {
@@ -149,7 +202,14 @@ async function handlePasswordLogin(request) {
 
 function handleMe(request) {
   const user = ensureUser(request);
-  return jsonResponse({ user });
+  const memberships = [...store.houseMembers.values()]
+    .filter((member) => member.userId === user.id && member.status === "active")
+    .map((member) => ({
+      ...member,
+      house: store.houses.get(member.houseId) || null,
+    }));
+
+  return jsonResponse({ user, memberships });
 }
 
 async function handleCreateHouse(request) {
@@ -162,6 +222,7 @@ async function handleCreateHouse(request) {
     city: optionalString(body.city),
     baseCurrency: requireString(body.baseCurrency || "PKR", "baseCurrency"),
     timezone: requireString(body.timezone || "Asia/Karachi", "timezone"),
+    creatorRole: getPrimaryManagementRole(user.id),
   }), 201);
 }
 
@@ -174,7 +235,11 @@ function handleGetHouse(request, params) {
 function handleListMembers(request, params) {
   const user = ensureUser(request);
   ensureHouseAccess(params.id, user.id);
-  return jsonResponse({ members: houseService.listMembers(params.id) });
+  const members = houseService.listMembers(params.id).map((member) => ({
+    ...member,
+    user: store.users.get(member.userId) || null,
+  }));
+  return jsonResponse({ members });
 }
 
 async function handleAddMember(request, params) {
@@ -195,7 +260,7 @@ async function handleAddMember(request, params) {
       locale: optionalString(body.user?.locale) || "en-PK",
       avatarUrl: optionalString(body.user?.avatarUrl),
     },
-    role: requireOneOf(body.role || "flatmate", "role", ["flatmate", "manager", "viewer"]),
+    role: requireOneOf(body.role || "flatmate", "role", ["flatmate", "manager", "admin", "viewer"]),
   }), 201);
 }
 
@@ -206,7 +271,7 @@ async function handleCreateInvitation(request, params) {
     houseId: params.id,
     actorUserId: user.id,
     contact: requireString(body.contact, "contact"),
-    role: requireOneOf(body.role || "flatmate", "role", ["flatmate", "manager", "viewer"]),
+    role: requireOneOf(body.role || "flatmate", "role", ["flatmate", "manager", "admin", "viewer"]),
   }), 201);
 }
 
@@ -228,12 +293,15 @@ async function handleCreateExpense(request, params) {
       selectedUserIds: Array.isArray(body.selectedUserIds) ? body.selectedUserIds : [],
       percentageSplits: Array.isArray(body.percentageSplits) ? body.percentageSplits : [],
       unequalSplits: Array.isArray(body.unequalSplits) ? body.unequalSplits : [],
+      payerContributions: Array.isArray(body.payerContributions) ? body.payerContributions : [],
       guestShareMinor: body.guestShareMinor || 0,
       hostUserId: optionalString(body.hostUserId),
       currency: optionalString(body.currency) || "PKR",
       paidByUserId: optionalString(body.paidByUserId) || user.id,
       receiptUrl: optionalString(body.receiptUrl),
-      requiresApproval: parseBoolean(body.requiresApproval, true),
+      requiresApproval: isManagementRole(getHouseRole(params.id, user.id))
+        ? parseBoolean(body.requiresApproval, false)
+        : true,
       isRecurring: parseBoolean(body.isRecurring, false),
       recurrenceId: optionalString(body.recurrenceId),
     },
@@ -397,6 +465,30 @@ function handleCashLedger(request, params) {
   });
 }
 
+function handleActivityLog(request, params) {
+  const user = ensureUser(request);
+  ensureHouseAccess(params.id, user.id);
+  const history = store.activityLog
+    .filter((entry) => (entry.houseId || entry.house_id) === params.id)
+    .map((entry) => {
+      const actorUserId = entry.actorUserId || entry.actor_user_id || null;
+      return {
+        id: entry.id,
+        houseId: entry.houseId || entry.house_id,
+        actorUserId,
+        actor: actorUserId ? store.users.get(actorUserId) || null : null,
+        actionType: entry.actionType || entry.action_type,
+        entityType: entry.entityType || entry.entity_type,
+        entityId: entry.entityId || entry.entity_id,
+        metadata: entry.metadata || entry.metadata_json || {},
+        createdAt: entry.createdAt || entry.created_at,
+      };
+    })
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+
+  return jsonResponse({ history });
+}
+
 function handleListPayments(request, params) {
   const user = ensureUser(request);
   ensureHouseAccess(params.id, user.id);
@@ -465,6 +557,7 @@ const routes = [
   ["GET", "/houses/:id/settlements", handleListSettlements],
   ["GET", "/houses/:id/balances", handleBalances],
   ["GET", "/houses/:id/cash-ledger", handleCashLedger],
+  ["GET", "/houses/:id/activity", handleActivityLog],
   ["POST", "/files/upload-url", handleUploadUrl],
 ];
 

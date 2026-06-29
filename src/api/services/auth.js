@@ -69,7 +69,7 @@ async function supabaseRequest(path, body) {
 
 export function createAuthService(store, persistence) {
   return {
-    async createPasswordUser({ contact, fullName, password }) {
+    async createPasswordUser({ contact, fullName, password, role = "flatmate" }) {
       const normalized = normalizeContact(contact);
       if (!fullName || typeof fullName !== "string") {
         throw new ApiError(400, "Full name is required");
@@ -104,7 +104,7 @@ export function createAuthService(store, persistence) {
       store.usersByContact.set(normalized, user);
       await persistence.saveUser(user);
 
-      return sanitizeUser(user);
+      return { user: sanitizeUser(user), role };
     },
 
     async loginWithPassword({ contact, password }) {

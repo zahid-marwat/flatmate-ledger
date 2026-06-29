@@ -2,9 +2,9 @@ import { ApiError } from "../errors.js";
 import { createId } from "../id.js";
 import { calculateExpenseSplits } from "../split.js";
 
-function isManager(store, houseId, userId) {
+function hasManagementRole(store, houseId, userId) {
   const member = store.houseMembers.get(`${houseId}:${userId}`);
-  return member?.role === "manager" && member.status === "active";
+  return ["admin", "manager"].includes(member?.role) && member.status === "active";
 }
 
 function assertHouseMember(store, houseId, userId) {
@@ -47,7 +47,12 @@ export function createExpenseService(store, logActivity, persistence) {
 
     for (const expense of store.expenses.values()) {
       if (expense.houseId !== houseId || expense.status !== "approved") continue;
-      balances.set(expense.paidByUserId, (balances.get(expense.paidByUserId) || 0) + expense.amountMinor);
+      const payerContributions = expense.payerContributions?.length
+        ? expense.payerContributions
+        : [{ userId: expense.paidByUserId, amountMinor: expense.amountMinor }];
+      for (const contribution of payerContributions) {
+        balances.set(contribution.userId, (balances.get(contribution.userId) || 0) + contribution.amountMinor);
+      }
 
       for (const split of expense.splits) {
         balances.set(split.userId, (balances.get(split.userId) || 0) - split.owedAmountMinor);
@@ -66,11 +71,12 @@ export function createExpenseService(store, logActivity, persistence) {
   return {
     async createExpense({ houseId, actorUserId, payload }) {
       assertHouseMember(store, houseId, actorUserId);
+      const actorCanManage = hasManagementRole(store, houseId, actorUserId);
 
       const house = store.houses.get(houseId);
       if (!house) throw new ApiError(404, "House not found");
 
-      const paidByUserId = payload.paidByUserId || actorUserId;
+      const paidByUserId = actorCanManage ? payload.paidByUserId || actorUserId : actorUserId;
       assertHouseMember(store, houseId, paidByUserId);
 
       const participantUserIds = payload.participantUserIds?.length
@@ -82,6 +88,24 @@ export function createExpenseService(store, logActivity, persistence) {
       const amountMinor = Math.trunc(Number(payload.amountMinor));
       if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
         throw new ApiError(400, "amountMinor must be a positive integer");
+      }
+
+      const payerContributions = actorCanManage && payload.payerContributions?.length
+        ? payload.payerContributions.map((entry) => ({
+            userId: entry.userId,
+            amountMinor: Math.trunc(Number(entry.amountMinor)),
+          }))
+        : [{ userId: paidByUserId, amountMinor }];
+
+      const contributionTotal = payerContributions.reduce((sum, entry) => sum + entry.amountMinor, 0);
+      if (contributionTotal !== amountMinor) {
+        throw new ApiError(400, "Payer contributions must equal the expense total");
+      }
+      for (const contribution of payerContributions) {
+        if (!contribution.userId || !Number.isFinite(contribution.amountMinor) || contribution.amountMinor <= 0) {
+          throw new ApiError(400, "Each payer contribution needs a userId and positive amountMinor");
+        }
+        assertHouseMember(store, houseId, contribution.userId);
       }
 
       const splits = calculateExpenseSplits({
@@ -96,9 +120,12 @@ export function createExpenseService(store, logActivity, persistence) {
         hostUserId: payload.hostUserId || null,
         currency: payload.currency || house.baseCurrency || "PKR",
       });
+      for (const split of splits) {
+        assertHouseMember(store, houseId, split.userId);
+      }
 
       const expenseId = createId();
-      const needsApproval = payload.requiresApproval ?? true;
+      const needsApproval = actorCanManage ? Boolean(payload.requiresApproval) : true;
       const status = needsApproval ? "pending_approval" : "approved";
       const now = new Date().toISOString();
       const expense = {
@@ -119,6 +146,7 @@ export function createExpenseService(store, logActivity, persistence) {
         recurrenceId: payload.recurrenceId || null,
         receiptUrl: payload.receiptUrl || null,
         paidByUserId,
+        payerContributions,
         splits,
         createdAt: now,
         updatedAt: now,
@@ -134,8 +162,8 @@ export function createExpenseService(store, logActivity, persistence) {
     },
 
     async approveExpense({ houseId, actorUserId, expenseId }) {
-      if (!isManager(store, houseId, actorUserId)) {
-        throw new ApiError(403, "Only the manager can approve expenses");
+      if (!hasManagementRole(store, houseId, actorUserId)) {
+        throw new ApiError(403, "Only an admin or manager can approve expenses");
       }
       const expense = store.expenses.get(expenseId);
       if (!expense || expense.houseId !== houseId) throw new ApiError(404, "Expense not found");
@@ -153,8 +181,8 @@ export function createExpenseService(store, logActivity, persistence) {
     },
 
     async rejectExpense({ houseId, actorUserId, expenseId, reason }) {
-      if (!isManager(store, houseId, actorUserId)) {
-        throw new ApiError(403, "Only the manager can reject expenses");
+      if (!hasManagementRole(store, houseId, actorUserId)) {
+        throw new ApiError(403, "Only an admin or manager can reject expenses");
       }
       const expense = store.expenses.get(expenseId);
       if (!expense || expense.houseId !== houseId) throw new ApiError(404, "Expense not found");

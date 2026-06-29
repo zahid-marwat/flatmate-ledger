@@ -3,46 +3,71 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Flatmate Ledger Admin</title>
+    <title>Flatmate Ledger</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="bg-orb bg-orb-left"></div>
-    <div class="bg-orb bg-orb-right"></div>
-    <main class="shell">
+    <main id="loginView" class="auth-shell">
+      <section class="auth-panel">
+        <div class="brand">
+          <div class="brand-mark">FL</div>
+          <div>
+            <p class="eyebrow">Flatmate Ledger</p>
+            <h1>Shared flat finance</h1>
+          </div>
+        </div>
+
+        <form id="loginForm" class="stack">
+          <h2>Login</h2>
+          <input name="contact" placeholder="Email or phone" autocomplete="username" />
+          <input name="password" type="password" placeholder="Password" autocomplete="current-password" />
+          <button type="submit">Enter Ledger</button>
+        </form>
+
+        <form id="createUserForm" class="stack setup-box">
+          <h2>Create User</h2>
+          <input name="fullName" placeholder="Full name" />
+          <input name="contact" placeholder="Email or phone" autocomplete="username" />
+          <input name="password" type="password" placeholder="Password" autocomplete="new-password" />
+          <select name="role">
+            <option value="admin">Admin</option>
+            <option value="manager">Manager</option>
+            <option value="flatmate">Flatmate</option>
+            <option value="viewer">Viewer</option>
+          </select>
+          <input name="setupKey" type="password" placeholder="Setup key, if enabled" />
+          <button type="submit">Create Account</button>
+        </form>
+      </section>
+    </main>
+
+    <main id="appView" class="shell" hidden>
       <aside class="sidebar">
         <div class="brand">
           <div class="brand-mark">FL</div>
           <div>
             <p class="eyebrow">Flatmate Ledger</p>
-            <h1>Admin Console</h1>
+            <h1 id="workspaceTitle">Dashboard</h1>
           </div>
         </div>
 
         <section class="panel">
-          <h2>Admin Users</h2>
-          <form id="createUserForm" class="stack">
-            <input name="fullName" placeholder="Full name" />
-            <input name="contact" placeholder="Login email or phone" />
-            <input name="password" type="password" placeholder="Password" />
-            <input name="setupKey" type="password" placeholder="Setup key, if enabled" />
-            <button type="submit">Create User</button>
-          </form>
-          <form id="loginForm" class="stack subtle-space">
-            <input name="contact" placeholder="Login email or phone" />
-            <input name="password" type="password" placeholder="Password" />
-            <button type="submit">Login</button>
-          </form>
+          <h2>Session</h2>
           <div class="token-box">
+            <span>Signed in as</span>
+            <strong id="signedInUser">Not signed in</strong>
+            <span>Role</span>
+            <strong id="signedInRole">Unknown</strong>
             <span>Session</span>
             <code id="tokenState">Not signed in</code>
           </div>
+          <button id="logoutBtn" type="button" class="subtle-space">Logout</button>
         </section>
 
-        <section class="panel">
+        <section id="adminHousePanel" class="panel">
           <h2>House</h2>
           <form id="houseForm" class="stack">
             <input name="name" placeholder="House name" />
@@ -56,13 +81,12 @@
           </label>
         </section>
 
-        <section class="panel">
+        <section id="adminQuickActions" class="panel">
           <h2>Quick Actions</h2>
           <div class="actions">
             <button data-jump="expense">New Expense</button>
             <button data-jump="payment">New Payment</button>
             <button data-jump="member">Invite Member</button>
-            <button data-jump="refresh">Refresh All</button>
           </div>
         </section>
       </aside>
@@ -70,8 +94,8 @@
       <section class="content">
         <header class="hero">
           <div>
-            <p class="eyebrow">Pakistan-first shared flat finance</p>
-            <h2>Track bills, cash, payments, and settlement in one place.</h2>
+            <p class="eyebrow" id="viewEyebrow">House Workspace</p>
+            <h2 id="viewHeadline">Track bills, cash, payments, and settlement.</h2>
           </div>
           <div class="hero-metrics">
             <article>
@@ -89,7 +113,33 @@
           </div>
         </header>
 
-        <section id="dashboardGrid" class="grid">
+        <section id="dashboardView" class="grid">
+          <article class="panel wide">
+            <div class="panel-head">
+              <h3>Flat # 207 Dashboard</h3>
+              <span>Visible to admin, manager, and flatmates</span>
+            </div>
+            <div id="dashboardSummaryCards" class="summary-grid"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h3>Flatmates</h3>
+              <span>Avatar roster</span>
+            </div>
+            <div id="dashboardRoster" class="avatar-grid"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h3>History</h3>
+              <span id="historyCount">0 events</span>
+            </div>
+            <div id="historyList" class="ledger"></div>
+          </article>
+        </section>
+
+        <section id="adminView" class="grid">
           <article class="panel wide">
             <div class="panel-head">
               <h3>House Summary</h3>
@@ -109,6 +159,7 @@
               <select name="role">
                 <option value="flatmate">Flatmate</option>
                 <option value="manager">Manager</option>
+                <option value="admin">Admin</option>
                 <option value="viewer">Viewer</option>
               </select>
               <button type="submit">Invite Member</button>
@@ -132,9 +183,25 @@
                 <option value="unequal">Unequal</option>
                 <option value="guest_to_host">Guest to host</option>
               </select>
+              <label class="field-label">
+                <span>Paid by</span>
+                <select id="managerPaidByUserId" name="paidByUserId"></select>
+              </label>
+              <label class="field-label">
+                <span>Included in split</span>
+                <div id="managerSplitMembers" class="check-grid"></div>
+              </label>
+              <textarea name="payerContributions" rows="3" placeholder="Optional multi-payer lines, e.g. asfandyar=10000"></textarea>
+              <textarea name="percentageSplits" rows="3" placeholder="For percentage split, e.g. zahid=50&#10;asfandyar=50"></textarea>
+              <textarea name="unequalSplits" rows="3" placeholder="For unequal split, amounts in PKR, e.g. zahid=1200"></textarea>
+              <label class="field-label">
+                <span>Guest host</span>
+                <select id="managerHostUserId" name="hostUserId"></select>
+              </label>
+              <input name="guestShareMinor" placeholder="Guest share in paisa" />
               <textarea name="note" rows="3" placeholder="Note"></textarea>
               <input name="receiptUrl" placeholder="Receipt URL" />
-              <button type="submit">Create Expense</button>
+              <button type="submit">Create Approved Expense</button>
             </form>
           </article>
 
@@ -185,7 +252,42 @@
             </div>
             <div id="settlementList" class="ledger subtle-space"></div>
           </article>
+        </section>
 
+        <section id="userView" class="grid" hidden>
+          <article class="panel wide">
+            <div class="panel-head">
+              <h3>My House</h3>
+              <span id="userHouseName">No house selected</span>
+            </div>
+            <div id="userSummaryCards" class="summary-grid"></div>
+          </article>
+
+          <article class="panel wide">
+            <div class="panel-head">
+              <h3>My Balance</h3>
+              <span id="userBalanceLabel">0 open balances</span>
+            </div>
+            <div id="userBalanceList" class="ledger"></div>
+          </article>
+
+          <article class="panel wide">
+            <div class="panel-head">
+              <h3>Submit Expense</h3>
+              <span>Manager approval required</span>
+            </div>
+            <form id="userExpenseForm" class="stack compact">
+              <input name="title" placeholder="Bill title" />
+              <input name="amountMinor" placeholder="Amount in paisa" />
+              <input name="expenseDate" type="date" />
+              <textarea name="note" rows="3" placeholder="Note"></textarea>
+              <input name="receiptUrl" placeholder="Receipt URL" />
+              <button type="submit">Submit for Approval</button>
+            </form>
+          </article>
+        </section>
+
+        <section class="grid">
           <article class="panel wide">
             <div class="panel-head">
               <h3>Balances</h3>
@@ -216,4 +318,4 @@
     <div id="toast" class="toast" hidden></div>
     <script type="module" src="/app.js"></script>
   </body>
-  </html>
+</html>

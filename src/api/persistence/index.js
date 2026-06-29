@@ -74,7 +74,7 @@ function mapExpense(row) {
     isRecurring: Boolean(row.is_recurring),
     recurrenceId: row.recurrence_id || null,
     receiptUrl: row.receipt_url || null,
-    paidByUserId: row.paid_by_user_id || null,
+    payerContributions: row.payer_contributions_json || [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -213,6 +213,9 @@ export function createPersistence(store) {
       current.push(mapped);
       store.expenseSplits.set(mapped.expenseId, current);
     }
+    for (const expense of store.expenses.values()) {
+      expense.splits = store.expenseSplits.get(expense.id) || [];
+    }
     for (const payment of rows(payments).map(mapPayment)) store.payments.set(payment.id, payment);
     for (const entry of rows(cashLedger).map(mapCashEntry)) store.cashLedger.set(entry.id, entry);
     for (const session of rows(sessions)) store.sessions.set(session.token, { userId: session.user_id, createdAt: session.created_at });
@@ -329,6 +332,7 @@ export function createPersistence(store) {
         created_by: expense.createdBy,
         approved_by: expense.approvedBy,
         paid_by_user_id: expense.paidByUserId,
+        payer_contributions_json: expense.payerContributions || [],
         category_id: expense.categoryId,
         title: expense.title,
         note: expense.note,
@@ -341,7 +345,6 @@ export function createPersistence(store) {
         is_recurring: expense.isRecurring,
         recurrence_id: expense.recurrenceId,
         receipt_url: expense.receiptUrl,
-        paid_by_user_id: expense.paidByUserId,
         created_at: expense.createdAt,
         updated_at: expense.updatedAt,
       }]);

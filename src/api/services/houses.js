@@ -1,6 +1,10 @@
 import { ApiError } from "../errors.js";
 import { createId } from "../id.js";
 
+function hasManagementRole(member) {
+  return ["admin", "manager"].includes(member?.role) && member.status === "active";
+}
+
 export function createHouseService(store, logActivity, persistence) {
   function assertHouseMember(houseId, userId) {
     const member = store.houseMembers.get(`${houseId}:${userId}`);
@@ -11,7 +15,7 @@ export function createHouseService(store, logActivity, persistence) {
   }
 
   return {
-    async createHouse({ creatorUserId, name, address = null, city = null, baseCurrency = "PKR", timezone = "Asia/Karachi" }) {
+    async createHouse({ creatorUserId, name, address = null, city = null, baseCurrency = "PKR", timezone = "Asia/Karachi", creatorRole = "manager" }) {
       if (!name) throw new ApiError(400, "House name is required");
 
       const houseId = createId();
@@ -37,7 +41,7 @@ export function createHouseService(store, logActivity, persistence) {
         id: createId(),
         houseId,
         userId: creatorUserId,
-        role: "manager",
+        role: creatorRole,
         status: "active",
         joinedAt: new Date().toISOString(),
         leftAt: null,
@@ -49,7 +53,7 @@ export function createHouseService(store, logActivity, persistence) {
       await persistence.saveHouseMember(member);
 
       logActivity(houseId, creatorUserId, "house.created", "house", houseId, { name });
-      logActivity(houseId, creatorUserId, "house.member_added", "house_member", member.id, { role: "manager" });
+      logActivity(houseId, creatorUserId, "house.member_added", "house_member", member.id, { role: creatorRole });
 
       return { house, member };
     },
@@ -65,8 +69,8 @@ export function createHouseService(store, logActivity, persistence) {
     async addMember({ houseId, actorUserId, user, role = "flatmate" }) {
       assertHouseMember(houseId, actorUserId);
       const actor = store.houseMembers.get(`${houseId}:${actorUserId}`);
-      if (actor.role !== "manager") {
-        throw new ApiError(403, "Only the manager can add members");
+      if (!hasManagementRole(actor)) {
+        throw new ApiError(403, "Only an admin or manager can add members");
       }
 
       if (!user || (!user.fullName && !user.id)) {
@@ -125,8 +129,8 @@ export function createHouseService(store, logActivity, persistence) {
     async updateMember({ houseId, actorUserId, memberUserId, patch }) {
       assertHouseMember(houseId, actorUserId);
       const actor = store.houseMembers.get(`${houseId}:${actorUserId}`);
-      if (actor.role !== "manager") {
-        throw new ApiError(403, "Only the manager can update members");
+      if (!hasManagementRole(actor)) {
+        throw new ApiError(403, "Only an admin or manager can update members");
       }
 
       const key = `${houseId}:${memberUserId}`;
@@ -158,8 +162,8 @@ export function createHouseService(store, logActivity, persistence) {
     async createInvitation({ houseId, actorUserId, contact, role = "flatmate" }) {
       assertHouseMember(houseId, actorUserId);
       const actor = store.houseMembers.get(`${houseId}:${actorUserId}`);
-      if (actor.role !== "manager") {
-        throw new ApiError(403, "Only the manager can invite members");
+      if (!hasManagementRole(actor)) {
+        throw new ApiError(403, "Only an admin or manager can invite members");
       }
 
       const invitationId = createId();

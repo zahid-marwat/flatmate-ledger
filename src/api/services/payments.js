@@ -1,9 +1,9 @@
 import { ApiError } from "../errors.js";
 import { createId } from "../id.js";
 
-function isManager(store, houseId, userId) {
+function hasManagementRole(store, houseId, userId) {
   const member = store.houseMembers.get(`${houseId}:${userId}`);
-  return member?.role === "manager" && member.status === "active";
+  return ["admin", "manager"].includes(member?.role) && member.status === "active";
 }
 
 function assertHouseMember(store, houseId, userId) {
@@ -56,8 +56,8 @@ export function createPaymentService(store, logActivity, expenseService, persist
     },
 
     async confirmPayment({ houseId, actorUserId, paymentId }) {
-      if (!isManager(store, houseId, actorUserId)) {
-        throw new ApiError(403, "Only the manager can confirm payments");
+      if (!hasManagementRole(store, houseId, actorUserId)) {
+        throw new ApiError(403, "Only an admin or manager can confirm payments");
       }
 
       const payment = store.payments.get(paymentId);
@@ -86,8 +86,8 @@ export function createPaymentService(store, logActivity, expenseService, persist
     },
 
     async rejectPayment({ houseId, actorUserId, paymentId, reason }) {
-      if (!isManager(store, houseId, actorUserId)) {
-        throw new ApiError(403, "Only the manager can reject payments");
+      if (!hasManagementRole(store, houseId, actorUserId)) {
+        throw new ApiError(403, "Only an admin or manager can reject payments");
       }
 
       const payment = store.payments.get(paymentId);
