@@ -243,27 +243,25 @@ async function refreshHouseList() {
   ].join("");
 }
 
-async function requestOtp(form) {
-  const result = await api("/auth/request-otp", {
+async function createUser(form) {
+  await api("/admin/users", {
     method: "POST",
     body: {
+      fullName: form.fullName.value,
       contact: form.contact.value,
-      fullName: form.fullName.value || null,
+      password: form.password.value,
+      setupKey: form.setupKey.value || null,
     },
   });
-  if (result.provider === "supabase") {
-    showToast("OTP requested from Supabase Auth");
-  } else {
-    showToast(`OTP sent. Dev code: ${result.devCode}`);
-  }
+  showToast("User created. They can log in now.");
 }
 
-async function verifyOtp(form) {
-  const result = await api("/auth/verify-otp", {
+async function login(form) {
+  const result = await api("/auth/login", {
     method: "POST",
     body: {
       contact: form.contact.value,
-      code: form.code.value,
+      password: form.password.value,
     },
   });
   setToken(result.token);
@@ -425,8 +423,8 @@ els.houseSelect.addEventListener("change", async () => {
   await refreshHouseList();
 });
 
-bindForm("otpForm", requestOtp);
-bindForm("verifyForm", verifyOtp);
+bindForm("createUserForm", createUser);
+bindForm("loginForm", login);
 bindForm("houseForm", createHouse);
 bindForm("memberForm", addMember);
 bindForm("expenseForm", createExpense);
@@ -459,4 +457,3 @@ if (state.houseId) {
 }
 
 refreshHouseList().catch((error) => showToast(error.message, "error"));
-

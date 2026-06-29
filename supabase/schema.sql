@@ -46,6 +46,9 @@ create table if not exists public.users (
   avatar_url text,
   default_currency text not null default 'PKR',
   locale text not null default 'en-PK',
+  password_hash text,
+  password_salt text,
+  password_algorithm text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

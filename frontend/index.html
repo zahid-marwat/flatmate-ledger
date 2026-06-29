@@ -23,16 +23,18 @@
         </div>
 
         <section class="panel">
-          <h2>Auth</h2>
-          <form id="otpForm" class="stack">
-            <input name="contact" placeholder="Phone or email" />
+          <h2>Admin Users</h2>
+          <form id="createUserForm" class="stack">
             <input name="fullName" placeholder="Full name" />
-            <button type="submit">Request OTP</button>
+            <input name="contact" placeholder="Login email or phone" />
+            <input name="password" type="password" placeholder="Password" />
+            <input name="setupKey" type="password" placeholder="Setup key, if enabled" />
+            <button type="submit">Create User</button>
           </form>
-          <form id="verifyForm" class="stack subtle-space">
-            <input name="contact" placeholder="Phone or email" />
-            <input name="code" placeholder="OTP code" />
-            <button type="submit">Verify OTP</button>
+          <form id="loginForm" class="stack subtle-space">
+            <input name="contact" placeholder="Login email or phone" />
+            <input name="password" type="password" placeholder="Password" />
+            <button type="submit">Login</button>
           </form>
           <div class="token-box">
             <span>Session</span>

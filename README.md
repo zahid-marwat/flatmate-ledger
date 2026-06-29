@@ -48,10 +48,10 @@ Optional Supabase persistence:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_ANON_KEY`
-- `SUPABASE_AUTH_MODE=real`
+- `ADMIN_SETUP_KEY`
 
 If those are present, the API hydrates from Supabase on boot and mirrors writes to it.
-If `SUPABASE_AUTH_MODE` is set to `real`, OTP login uses Supabase Auth instead of the local dev OTP flow.
+If `ADMIN_SETUP_KEY` is set, the admin user-creation form requires that setup key.
 
 The dashboard is served from `/` by the same Node server and talks directly to the API routes.
 

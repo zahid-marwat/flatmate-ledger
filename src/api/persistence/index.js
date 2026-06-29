@@ -15,6 +15,9 @@ function mapUser(row) {
     avatarUrl: row.avatar_url || null,
     defaultCurrency: row.default_currency || "PKR",
     locale: row.locale || "en-PK",
+    passwordHash: row.password_hash || null,
+    passwordSalt: row.password_salt || null,
+    passwordAlgorithm: row.password_algorithm || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -250,6 +253,9 @@ export function createPersistence(store) {
         avatar_url: user.avatarUrl,
         default_currency: user.defaultCurrency,
         locale: user.locale,
+        password_hash: user.passwordHash || null,
+        password_salt: user.passwordSalt || null,
+        password_algorithm: user.passwordAlgorithm || null,
         created_at: user.createdAt,
         updated_at: user.updatedAt,
       }]);

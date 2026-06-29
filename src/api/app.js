@@ -123,6 +123,30 @@ async function handleAuthVerify(request) {
   }));
 }
 
+async function handleCreatePasswordUser(request) {
+  const body = await readJson(request);
+  const configuredSetupKey = process.env.ADMIN_SETUP_KEY;
+  if (configuredSetupKey && body.setupKey !== configuredSetupKey) {
+    throw new ApiError(403, "Invalid admin setup key");
+  }
+
+  return jsonResponse({
+    user: await authService.createPasswordUser({
+      contact: requireString(body.contact, "contact"),
+      fullName: requireString(body.fullName, "fullName"),
+      password: requireString(body.password, "password"),
+    }),
+  }, 201);
+}
+
+async function handlePasswordLogin(request) {
+  const body = await readJson(request);
+  return jsonResponse(await authService.loginWithPassword({
+    contact: requireString(body.contact, "contact"),
+    password: requireString(body.password, "password"),
+  }));
+}
+
 function handleMe(request) {
   const user = ensureUser(request);
   return jsonResponse({ user });
@@ -417,6 +441,8 @@ function handleNotFound() {
 
 const routes = [
   ["GET", "/health", handleHealth],
+  ["POST", "/admin/users", handleCreatePasswordUser],
+  ["POST", "/auth/login", handlePasswordLogin],
   ["POST", "/auth/request-otp", handleAuthRequest],
   ["POST", "/auth/verify-otp", handleAuthVerify],
   ["GET", "/me", handleMe],

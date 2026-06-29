@@ -1,3 +1,4 @@
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { ApiError } from "../errors.js";
 import { createId } from "../id.js";
 
@@ -26,6 +27,27 @@ function isEmail(contact) {
   return contact.includes("@");
 }
 
+function hashPassword(password, salt = randomBytes(16).toString("hex")) {
+  const hash = scryptSync(password, salt, 64).toString("hex");
+  return { hash, salt, algorithm: "scrypt" };
+}
+
+function verifyPassword(password, user) {
+  if (!user.passwordHash || !user.passwordSalt) return false;
+  const candidate = scryptSync(password, user.passwordSalt, 64);
+  const stored = Buffer.from(user.passwordHash, "hex");
+  if (candidate.length !== stored.length) return false;
+  return timingSafeEqual(candidate, stored);
+}
+
+function sanitizeUser(user) {
+  const { passwordHash, passwordSalt, passwordAlgorithm, ...safeUser } = user;
+  void passwordHash;
+  void passwordSalt;
+  void passwordAlgorithm;
+  return safeUser;
+}
+
 async function supabaseRequest(path, body) {
   const response = await fetch(`${process.env.SUPABASE_URL}/auth/v1/${path}`, {
     method: "POST",
@@ -47,6 +69,65 @@ async function supabaseRequest(path, body) {
 
 export function createAuthService(store, persistence) {
   return {
+    async createPasswordUser({ contact, fullName, password }) {
+      const normalized = normalizeContact(contact);
+      if (!fullName || typeof fullName !== "string") {
+        throw new ApiError(400, "Full name is required");
+      }
+      if (!password || typeof password !== "string" || password.length < 6) {
+        throw new ApiError(400, "Password must be at least 6 characters");
+      }
+      const existingUser = store.usersByContact.get(normalized);
+      if (existingUser?.passwordHash) {
+        throw new ApiError(409, "A user with this login already exists");
+      }
+
+      const passwordRecord = hashPassword(password);
+      const user = {
+        ...(existingUser || {}),
+        id: existingUser?.id || createId(),
+        contact: normalized,
+        phone: existingUser?.phone || (normalized.includes("@") ? null : normalized),
+        email: existingUser?.email || (normalized.includes("@") ? normalized : null),
+        fullName: fullName.trim(),
+        avatarUrl: existingUser?.avatarUrl || null,
+        defaultCurrency: existingUser?.defaultCurrency || "PKR",
+        locale: existingUser?.locale || "en-PK",
+        passwordHash: passwordRecord.hash,
+        passwordSalt: passwordRecord.salt,
+        passwordAlgorithm: passwordRecord.algorithm,
+        createdAt: existingUser?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      store.users.set(user.id, user);
+      store.usersByContact.set(normalized, user);
+      await persistence.saveUser(user);
+
+      return sanitizeUser(user);
+    },
+
+    async loginWithPassword({ contact, password }) {
+      const normalized = normalizeContact(contact);
+      const user = store.usersByContact.get(normalized);
+      if (!user || !verifyPassword(password, user)) {
+        throw new ApiError(401, "Invalid login or password");
+      }
+
+      const sessionToken = createId();
+      store.sessions.set(sessionToken, {
+        userId: user.id,
+        createdAt: Date.now(),
+      });
+      await persistence.saveSession(sessionToken, user.id);
+
+      return {
+        token: sessionToken,
+        user: sanitizeUser(user),
+        provider: "password",
+      };
+    },
+
     async requestOtp({ contact, fullName = null }) {
       const normalized = normalizeContact(contact);
       if (authMode() === "supabase" && hasSupabaseAuthEnv()) {
@@ -119,7 +200,7 @@ export function createAuthService(store, persistence) {
 
         return {
           token: accessToken,
-          user,
+          user: sanitizeUser(user),
           provider: "supabase",
         };
       }
@@ -166,7 +247,7 @@ export function createAuthService(store, persistence) {
 
       return {
         token: sessionToken,
-        user,
+        user: sanitizeUser(user),
         provider: "local",
       };
     },
