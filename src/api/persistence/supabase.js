@@ -5,7 +5,12 @@ function trimSlash(value) {
 export function createSupabaseClient() {
   const url = trimSlash(process.env.SUPABASE_URL);
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const enabled = Boolean(url && serviceKey);
+  const enabled = Boolean(
+    url &&
+      serviceKey &&
+      /^https?:\/\//i.test(url) &&
+      !url.includes("your_supabase_project_url"),
+  );
 
   async function request(path, { method = "GET", body = null, headers = {} } = {}) {
     if (!enabled) {
@@ -70,4 +75,3 @@ export function createSupabaseClient() {
     patch,
   };
 }
-
