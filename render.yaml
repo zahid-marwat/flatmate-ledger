@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: flatmate-ledger
+    env: docker
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 3001
+

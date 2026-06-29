@@ -132,6 +132,7 @@ create table if not exists public.expenses (
   house_id uuid not null references public.houses(id) on delete cascade,
   created_by uuid references public.users(id) on delete set null,
   approved_by uuid references public.users(id) on delete set null,
+  paid_by_user_id uuid references public.users(id) on delete set null,
   category_id uuid references public.categories(id) on delete set null,
   title text not null,
   note text,

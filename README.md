@@ -55,6 +55,21 @@ If `SUPABASE_AUTH_MODE` is set to `real`, OTP login uses Supabase Auth instead o
 
 The dashboard is served from `/` by the same Node server and talks directly to the API routes.
 
+## Production deploy
+
+This repo includes:
+
+- `Dockerfile`
+- `render.yaml`
+
+That means you can deploy the app as one web service.
+
+Recommended production shape:
+
+- Frontend and API in one Node service
+- Supabase for database/auth/storage
+- Render or another Docker-based host for the app server
+
 ## Next implementation steps
 
 1. Add auth and house membership flows.
