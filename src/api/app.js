@@ -1,0 +1,495 @@
+import { ApiError, isApiError } from "./errors.js";
+import { jsonResponse } from "./response.js";
+import { readBearerToken, readJson } from "./request.js";
+import { createStore } from "./store.js";
+import { createPersistence } from "./persistence/index.js";
+import { createAuthService } from "./services/auth.js";
+import { createHouseService } from "./services/houses.js";
+import { createExpenseService } from "./services/expenses.js";
+import { createPaymentService } from "./services/payments.js";
+import { simplifyDebts } from "../domain/debt.js";
+import {
+  optionalString,
+  requireArray,
+  requireInteger,
+  requireOneOf,
+  requireString,
+} from "./validation.js";
+
+const store = createStore();
+const persistence = createPersistence(store);
+
+function logActivity(houseId, actorUserId, actionType, entityType, entityId, metadata) {
+  const entry = {
+    id: store.createId(),
+    houseId,
+    actorUserId,
+    actionType,
+    entityType,
+    entityId,
+    metadata,
+    createdAt: new Date().toISOString(),
+  };
+  store.activityLog.push(entry);
+  void persistence.saveActivity(entry);
+}
+
+const authService = createAuthService(store, persistence);
+const houseService = createHouseService(store, logActivity, persistence);
+const expenseService = createExpenseService(store, logActivity, persistence);
+const paymentService = createPaymentService(store, logActivity, expenseService, persistence);
+
+function getSessionUser(request) {
+  const token = readBearerToken(request);
+  if (!token) return null;
+
+  const session = store.sessions.get(token);
+  if (!session) return null;
+
+  return store.users.get(session.userId || session.user_id) || null;
+}
+
+function parseBoolean(value, fallback = false) {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") return ["true", "1", "yes"].includes(value.toLowerCase());
+  return fallback;
+}
+
+function ensureUser(request) {
+  const user = getSessionUser(request);
+  if (!user) {
+    throw new ApiError(401, "Unauthorized");
+  }
+  return user;
+}
+
+function ensureHouseAccess(houseId, userId) {
+  const member = store.houseMembers.get(`${houseId}:${userId}`);
+  if (!member || member.status !== "active") {
+    throw new ApiError(403, "House membership required");
+  }
+  return member;
+}
+
+function getHouseSummary(houseId) {
+  const house = store.houses.get(houseId);
+  if (!house) throw new ApiError(404, "House not found");
+
+  const expenses = expenseService.listExpenses(houseId);
+  const payments = paymentService.listPayments(houseId);
+  const balances = expenseService.getBalances(houseId);
+  const cashEntries = [...store.cashLedger.values()].filter((entry) => entry.houseId === houseId);
+
+  const totalCollectedMinor = payments
+    .filter((payment) => payment.confirmationStatus === "confirmed")
+    .reduce((sum, payment) => sum + payment.amountMinor, 0);
+
+  const totalPendingMinor = payments
+    .filter((payment) => payment.confirmationStatus === "pending")
+    .reduce((sum, payment) => sum + payment.amountMinor, 0);
+
+  const cashInHandMinor = cashEntries.reduce((sum, entry) => {
+    if (entry.entryType === "cash_collected") return sum + entry.amountMinor;
+    if (entry.entryType === "cash_spent") return sum - entry.amountMinor;
+    return sum;
+  }, 0);
+
+  return {
+    house,
+    expenseCount: expenses.length,
+    paymentCount: payments.length,
+    totalCollectedMinor,
+    totalPendingMinor,
+    cashInHandMinor,
+    balances,
+  };
+}
+
+async function handleAuthRequest(request) {
+  const body = await readJson(request);
+  return jsonResponse(await authService.requestOtp({
+    contact: requireString(body.contact, "contact"),
+    fullName: optionalString(body.fullName),
+  }));
+}
+
+async function handleAuthVerify(request) {
+  const body = await readJson(request);
+  return jsonResponse(await authService.verifyOtp({
+    contact: requireString(body.contact, "contact"),
+    code: requireString(String(body.code ?? ""), "code"),
+    fullName: optionalString(body.fullName),
+  }));
+}
+
+function handleMe(request) {
+  const user = ensureUser(request);
+  return jsonResponse({ user });
+}
+
+async function handleCreateHouse(request) {
+  const user = ensureUser(request);
+  const body = await readJson(request);
+  return jsonResponse(await houseService.createHouse({
+    creatorUserId: user.id,
+    name: requireString(body.name, "name"),
+    address: optionalString(body.address),
+    city: optionalString(body.city),
+    baseCurrency: requireString(body.baseCurrency || "PKR", "baseCurrency"),
+    timezone: requireString(body.timezone || "Asia/Karachi", "timezone"),
+  }), 201);
+}
+
+function handleGetHouse(request, params) {
+  const user = ensureUser(request);
+  ensureHouseAccess(params.id, user.id);
+  return jsonResponse(getHouseSummary(params.id));
+}
+
+function handleListMembers(request, params) {
+  const user = ensureUser(request);
+  ensureHouseAccess(params.id, user.id);
+  return jsonResponse({ members: houseService.listMembers(params.id) });
+}
+
+async function handleAddMember(request, params) {
+  const user = ensureUser(request);
+  const body = await readJson(request);
+  return jsonResponse(await houseService.addMember({
+    houseId: params.id,
+    actorUserId: user.id,
+    user: {
+      fullName: requireString(body.user?.fullName, "user.fullName"),
+      contact: optionalString(body.user?.contact),
+      phone: optionalString(body.user?.phone),
+      email: optionalString(body.user?.email),
+      roomName: optionalString(body.user?.roomName),
+      phoneDisplay: optionalString(body.user?.phoneDisplay),
+      isDefaultPayer: parseBoolean(body.user?.isDefaultPayer, false),
+      defaultCurrency: optionalString(body.user?.defaultCurrency) || "PKR",
+      locale: optionalString(body.user?.locale) || "en-PK",
+      avatarUrl: optionalString(body.user?.avatarUrl),
+    },
+    role: requireOneOf(body.role || "flatmate", "role", ["flatmate", "manager", "viewer"]),
+  }), 201);
+}
+
+async function handleCreateInvitation(request, params) {
+  const user = ensureUser(request);
+  const body = await readJson(request);
+  return jsonResponse(await houseService.createInvitation({
+    houseId: params.id,
+    actorUserId: user.id,
+    contact: requireString(body.contact, "contact"),
+    role: requireOneOf(body.role || "flatmate", "role", ["flatmate", "manager", "viewer"]),
+  }), 201);
+}
+
+async function handleCreateExpense(request, params) {
+  const user = ensureUser(request);
+  const body = await readJson(request);
+  return jsonResponse(await expenseService.createExpense({
+    houseId: params.id,
+    actorUserId: user.id,
+    payload: {
+      title: requireString(body.title, "title"),
+      amountMinor: requireInteger(body.amountMinor, "amountMinor", { min: 1 }),
+      expenseDate: requireString(body.expenseDate || new Date().toISOString().slice(0, 10), "expenseDate"),
+      dueDate: optionalString(body.dueDate),
+      categoryId: optionalString(body.categoryId),
+      note: optionalString(body.note),
+      splitType: requireOneOf(body.splitType, "splitType", ["equal_all", "equal_selected", "percentage", "unequal", "guest_to_host"]),
+      participantUserIds: Array.isArray(body.participantUserIds) ? body.participantUserIds : [],
+      selectedUserIds: Array.isArray(body.selectedUserIds) ? body.selectedUserIds : [],
+      percentageSplits: Array.isArray(body.percentageSplits) ? body.percentageSplits : [],
+      unequalSplits: Array.isArray(body.unequalSplits) ? body.unequalSplits : [],
+      guestShareMinor: body.guestShareMinor || 0,
+      hostUserId: optionalString(body.hostUserId),
+      currency: optionalString(body.currency) || "PKR",
+      paidByUserId: optionalString(body.paidByUserId) || user.id,
+      receiptUrl: optionalString(body.receiptUrl),
+      requiresApproval: parseBoolean(body.requiresApproval, true),
+      isRecurring: parseBoolean(body.isRecurring, false),
+      recurrenceId: optionalString(body.recurrenceId),
+    },
+  }), 201);
+}
+
+function handleListExpenses(request, params) {
+  const user = ensureUser(request);
+  ensureHouseAccess(params.id, user.id);
+  return jsonResponse({ expenses: expenseService.listExpenses(params.id) });
+}
+
+async function handleApproveExpense(request, params) {
+  const user = ensureUser(request);
+  const body = await readJson(request);
+  return jsonResponse(await expenseService.approveExpense({
+    houseId: params.id,
+    actorUserId: user.id,
+    expenseId: requireString(body.expenseId, "expenseId"),
+  }));
+}
+
+async function handleRejectExpense(request, params) {
+  const user = ensureUser(request);
+  const body = await readJson(request);
+  return jsonResponse(await expenseService.rejectExpense({
+    houseId: params.id,
+    actorUserId: user.id,
+    expenseId: requireString(body.expenseId, "expenseId"),
+    reason: optionalString(body.reason),
+  }));
+}
+
+async function handleCreatePayment(request, params) {
+  const user = ensureUser(request);
+  const body = await readJson(request);
+  return jsonResponse(await paymentService.createPayment({
+    houseId: params.id,
+    actorUserId: user.id,
+    payload: {
+      expenseId: optionalString(body.expenseId),
+      payerUserId: requireString(body.payerUserId, "payerUserId"),
+      receiverUserId: requireString(body.receiverUserId, "receiverUserId"),
+      amountMinor: requireInteger(body.amountMinor, "amountMinor", { min: 1 }),
+      currency: optionalString(body.currency) || "PKR",
+      method: requireOneOf(body.method || "cash", "method", ["cash", "bank", "wallet"]),
+      paymentDate: requireString(body.paymentDate || new Date().toISOString().slice(0, 10), "paymentDate"),
+      proofUrl: optionalString(body.proofUrl),
+      note: optionalString(body.note),
+    },
+  }), 201);
+}
+
+async function handleConfirmPayment(request, params) {
+  const user = ensureUser(request);
+  const body = await readJson(request);
+  return jsonResponse(await paymentService.confirmPayment({
+    houseId: params.id,
+    actorUserId: user.id,
+    paymentId: requireString(body.paymentId, "paymentId"),
+  }));
+}
+
+async function handleRejectPayment(request, params) {
+  const user = ensureUser(request);
+  const body = await readJson(request);
+  return jsonResponse(await paymentService.rejectPayment({
+    houseId: params.id,
+    actorUserId: user.id,
+    paymentId: requireString(body.paymentId, "paymentId"),
+    reason: optionalString(body.reason),
+  }));
+}
+
+async function handleCreateDispute(request, params) {
+  const user = ensureUser(request);
+  const body = await readJson(request);
+  const expenseId = requireString(body.expenseId, "expenseId");
+  const reason = requireString(body.reason, "reason");
+  const disputeId = store.createId();
+  const dispute = {
+    id: disputeId,
+    houseId: params.id,
+    expenseId,
+    openedBy: user.id,
+    reason,
+    status: "open",
+    resolutionNote: null,
+    resolvedBy: null,
+    resolvedAt: null,
+    createdAt: new Date().toISOString(),
+  };
+  store.disputes.set(disputeId, dispute);
+  void persistence.saveDispute(dispute);
+  logActivity(params.id, user.id, "dispute.created", "dispute", disputeId, { expenseId, reason });
+  return jsonResponse(dispute, 201);
+}
+
+function handleListDisputes(request, params) {
+  const user = ensureUser(request);
+  ensureHouseAccess(params.id, user.id);
+  return jsonResponse({ disputes: [...store.disputes.values()].filter((item) => item.houseId === params.id) });
+}
+
+async function handleGenerateSettlement(request, params) {
+  const user = ensureUser(request);
+  ensureHouseAccess(params.id, user.id);
+  const house = store.houses.get(params.id);
+  if (!house) throw new ApiError(404, "House not found");
+
+  const balances = expenseService.getBalances(params.id);
+  const settlementLines = simplifyDebts(
+    balances.map((entry) => ({
+      userId: entry.userId,
+      displayName: entry.userId,
+      balanceMinor: entry.balanceMinor,
+      currency: entry.currency,
+    })),
+  );
+
+  const settlementId = store.createId();
+  const settlement = {
+    id: settlementId,
+    houseId: params.id,
+    periodStart: house.currentMonthStart || new Date().toISOString().slice(0, 10),
+    periodEnd: house.currentMonthEnd || new Date().toISOString().slice(0, 10),
+    algorithmVersion: "v1",
+    totalExpensesMinor: [...store.expenses.values()].filter((item) => item.houseId === params.id && item.status === "approved").reduce((sum, item) => sum + item.amountMinor, 0),
+    totalPaymentsMinor: [...store.payments.values()].filter((item) => item.houseId === params.id && item.confirmationStatus === "confirmed").reduce((sum, item) => sum + item.amountMinor, 0),
+    netBalanceMinor: balances.reduce((sum, item) => sum + item.balanceMinor, 0),
+    generatedAt: new Date().toISOString(),
+    finalizedAt: null,
+    finalizedBy: null,
+  };
+  store.settlements.set(settlementId, settlement);
+  store.settlementLines.set(settlementId, settlementLines.map((line) => ({ id: store.createId(), settlementId, ...line, status: "pending", createdAt: new Date().toISOString() })));
+  void persistence.saveSettlement(settlement);
+  void persistence.saveSettlementLines(settlementId, settlementLines);
+  logActivity(params.id, user.id, "settlement.generated", "settlement", settlementId, { lineCount: settlementLines.length });
+  return jsonResponse({ settlement, lines: settlementLines }, 201);
+}
+
+function handleListSettlements(request, params) {
+  const user = ensureUser(request);
+  ensureHouseAccess(params.id, user.id);
+  const settlements = [...store.settlements.values()].filter((item) => item.houseId === params.id);
+  return jsonResponse({ settlements });
+}
+
+function handleBalances(request, params) {
+  const user = ensureUser(request);
+  ensureHouseAccess(params.id, user.id);
+  return jsonResponse({ balances: expenseService.getBalances(params.id) });
+}
+
+function handleCashLedger(request, params) {
+  const user = ensureUser(request);
+  ensureHouseAccess(params.id, user.id);
+  return jsonResponse({
+    entries: [...store.cashLedger.values()].filter((entry) => entry.houseId === params.id),
+  });
+}
+
+function handleListPayments(request, params) {
+  const user = ensureUser(request);
+  ensureHouseAccess(params.id, user.id);
+  return jsonResponse({ payments: paymentService.listPayments(params.id) });
+}
+
+async function handleUploadUrl(request) {
+  const user = ensureUser(request);
+  const body = await readJson(request);
+  const fileId = store.createId();
+  const fileName = body.fileName || `receipt-${fileId}`;
+  const publicUrl = `https://storage.local/${fileId}/${encodeURIComponent(fileName)}`;
+
+  const file = {
+    id: fileId,
+    bucket: body.bucket || "receipts",
+    fileName,
+    mimeType: body.mimeType || "application/octet-stream",
+    publicUrl,
+    uploadStatus: "pending",
+    createdBy: user.id,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  store.files.set(fileId, file);
+  void persistence.saveFile(file);
+
+  return jsonResponse({
+    fileId,
+    uploadUrl: `https://storage.local/upload/${fileId}`,
+    publicUrl,
+  });
+}
+
+function handleHealth() {
+  return jsonResponse({ ok: true, service: "flatmate-ledger-api" });
+}
+
+function handleNotFound() {
+  return jsonResponse({ error: "Not found" }, 404);
+}
+
+const routes = [
+  ["GET", "/health", handleHealth],
+  ["POST", "/auth/request-otp", handleAuthRequest],
+  ["POST", "/auth/verify-otp", handleAuthVerify],
+  ["GET", "/me", handleMe],
+  ["POST", "/houses", handleCreateHouse],
+  ["GET", "/houses/:id", handleGetHouse],
+  ["GET", "/houses/:id/members", handleListMembers],
+  ["POST", "/houses/:id/members", handleAddMember],
+  ["POST", "/houses/:id/invitations", handleCreateInvitation],
+  ["POST", "/houses/:id/expenses", handleCreateExpense],
+  ["GET", "/houses/:id/expenses", handleListExpenses],
+  ["POST", "/houses/:id/expenses/approve", handleApproveExpense],
+  ["POST", "/houses/:id/expenses/reject", handleRejectExpense],
+  ["POST", "/houses/:id/payments", handleCreatePayment],
+  ["GET", "/houses/:id/payments", handleListPayments],
+  ["POST", "/houses/:id/payments/confirm", handleConfirmPayment],
+  ["POST", "/houses/:id/payments/reject", handleRejectPayment],
+  ["POST", "/houses/:id/disputes", handleCreateDispute],
+  ["GET", "/houses/:id/disputes", handleListDisputes],
+  ["POST", "/houses/:id/settlements/generate", handleGenerateSettlement],
+  ["GET", "/houses/:id/settlements", handleListSettlements],
+  ["GET", "/houses/:id/balances", handleBalances],
+  ["GET", "/houses/:id/cash-ledger", handleCashLedger],
+  ["POST", "/files/upload-url", handleUploadUrl],
+];
+
+function matchRoute(method, pathname) {
+  for (const [routeMethod, pattern, handler] of routes) {
+    if (method !== routeMethod) continue;
+
+    const patternParts = pattern.split("/").filter(Boolean);
+    const pathParts = pathname.split("/").filter(Boolean);
+    if (patternParts.length !== pathParts.length) continue;
+
+    const params = {};
+    let matched = true;
+    for (let i = 0; i < patternParts.length; i += 1) {
+      const patternPart = patternParts[i];
+      const pathPart = pathParts[i];
+      if (patternPart.startsWith(":")) {
+        params[patternPart.slice(1)] = decodeURIComponent(pathPart);
+      } else if (patternPart !== pathPart) {
+        matched = false;
+        break;
+      }
+    }
+
+    if (matched) return { handler, params };
+  }
+  return null;
+}
+
+export async function handleRequest(request) {
+  try {
+    const url = new URL(request.url);
+    const matched = matchRoute(request.method, url.pathname);
+    if (!matched) return handleNotFound();
+
+    const result = await matched.handler(request, matched.params);
+    return result instanceof Response ? result : jsonResponse(result);
+  } catch (error) {
+    if (isApiError(error)) {
+      return jsonResponse({ error: error.message, details: error.details || null }, error.statusCode);
+    }
+
+    console.error(error);
+    return jsonResponse({ error: "Internal server error" }, 500);
+  }
+}
+
+export async function createApp() {
+  await persistence.hydrate();
+  return {
+    store,
+    handleRequest,
+  };
+}

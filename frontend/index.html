@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flatmate Ledger Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="bg-orb bg-orb-left"></div>
+    <div class="bg-orb bg-orb-right"></div>
+    <main class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">FL</div>
+          <div>
+            <p class="eyebrow">Flatmate Ledger</p>
+            <h1>Admin Console</h1>
+          </div>
+        </div>
+
+        <section class="panel">
+          <h2>Auth</h2>
+          <form id="otpForm" class="stack">
+            <input name="contact" placeholder="Phone or email" />
+            <input name="fullName" placeholder="Full name" />
+            <button type="submit">Request OTP</button>
+          </form>
+          <form id="verifyForm" class="stack subtle-space">
+            <input name="contact" placeholder="Phone or email" />
+            <input name="code" placeholder="OTP code" />
+            <button type="submit">Verify OTP</button>
+          </form>
+          <div class="token-box">
+            <span>Session</span>
+            <code id="tokenState">Not signed in</code>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>House</h2>
+          <form id="houseForm" class="stack">
+            <input name="name" placeholder="House name" />
+            <input name="city" placeholder="City" />
+            <input name="address" placeholder="Address" />
+            <button type="submit">Create House</button>
+          </form>
+          <label class="select-label">
+            <span>Active house</span>
+            <select id="houseSelect"></select>
+          </label>
+        </section>
+
+        <section class="panel">
+          <h2>Quick Actions</h2>
+          <div class="actions">
+            <button data-jump="expense">New Expense</button>
+            <button data-jump="payment">New Payment</button>
+            <button data-jump="member">Invite Member</button>
+            <button data-jump="refresh">Refresh All</button>
+          </div>
+        </section>
+      </aside>
+
+      <section class="content">
+        <header class="hero">
+          <div>
+            <p class="eyebrow">Pakistan-first shared flat finance</p>
+            <h2>Track bills, cash, payments, and settlement in one place.</h2>
+          </div>
+          <div class="hero-metrics">
+            <article>
+              <span>Total Collected</span>
+              <strong id="collectedMetric">PKR 0</strong>
+            </article>
+            <article>
+              <span>Pending</span>
+              <strong id="pendingMetric">PKR 0</strong>
+            </article>
+            <article>
+              <span>Cash in Hand</span>
+              <strong id="cashMetric">PKR 0</strong>
+            </article>
+          </div>
+        </header>
+
+        <section id="dashboardGrid" class="grid">
+          <article class="panel wide">
+            <div class="panel-head">
+              <h3>House Summary</h3>
+              <span id="houseName">No house selected</span>
+            </div>
+            <div id="summaryCards" class="summary-grid"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h3>Members</h3>
+              <span id="memberCount">0</span>
+            </div>
+            <form id="memberForm" class="stack compact">
+              <input name="fullName" placeholder="Member name" />
+              <input name="contact" placeholder="Phone or email" />
+              <select name="role">
+                <option value="flatmate">Flatmate</option>
+                <option value="manager">Manager</option>
+                <option value="viewer">Viewer</option>
+              </select>
+              <button type="submit">Invite Member</button>
+            </form>
+            <div id="memberList" class="list"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h3>Expense</h3>
+              <span>Approval flow ready</span>
+            </div>
+            <form id="expenseForm" class="stack compact">
+              <input name="title" placeholder="Bill title" />
+              <input name="amountMinor" placeholder="Amount in paisa" />
+              <input name="expenseDate" type="date" />
+              <select name="splitType">
+                <option value="equal_all">Equal all</option>
+                <option value="equal_selected">Equal selected</option>
+                <option value="percentage">Percentage</option>
+                <option value="unequal">Unequal</option>
+                <option value="guest_to_host">Guest to host</option>
+              </select>
+              <textarea name="note" rows="3" placeholder="Note"></textarea>
+              <input name="receiptUrl" placeholder="Receipt URL" />
+              <button type="submit">Create Expense</button>
+            </form>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h3>Payment</h3>
+              <span>Cash and proof support</span>
+            </div>
+            <form id="paymentForm" class="stack compact">
+              <input name="payerUserId" placeholder="Payer user ID" />
+              <input name="receiverUserId" placeholder="Receiver user ID" />
+              <input name="amountMinor" placeholder="Amount in paisa" />
+              <select name="method">
+                <option value="cash">Cash</option>
+                <option value="bank">Bank</option>
+                <option value="wallet">Wallet</option>
+              </select>
+              <input name="proofUrl" placeholder="Proof URL" />
+              <button type="submit">Create Payment</button>
+            </form>
+            <form id="confirmPaymentForm" class="stack compact subtle-space">
+              <input name="paymentId" placeholder="Payment ID to confirm" />
+              <button type="submit">Confirm Payment</button>
+            </form>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h3>Disputes</h3>
+              <span>Open issue tracking</span>
+            </div>
+            <form id="disputeForm" class="stack compact">
+              <input name="expenseId" placeholder="Expense ID" />
+              <textarea name="reason" rows="3" placeholder="Reason"></textarea>
+              <button type="submit">Open Dispute</button>
+            </form>
+            <div id="disputeList" class="ledger subtle-space"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h3>Settlement</h3>
+              <span>Month-end closeout</span>
+            </div>
+            <div class="actions">
+              <button id="generateSettlementBtn" type="button">Generate Settlement</button>
+              <button id="refreshSettlementBtn" type="button">Refresh Settlements</button>
+            </div>
+            <div id="settlementList" class="ledger subtle-space"></div>
+          </article>
+
+          <article class="panel wide">
+            <div class="panel-head">
+              <h3>Balances</h3>
+              <span id="balanceCount">0 open balances</span>
+            </div>
+            <div id="balanceList" class="ledger"></div>
+          </article>
+
+          <article class="panel wide">
+            <div class="panel-head">
+              <h3>Expenses</h3>
+              <span id="expenseCount">0 total</span>
+            </div>
+            <div id="expenseList" class="ledger"></div>
+          </article>
+
+          <article class="panel wide">
+            <div class="panel-head">
+              <h3>Payments</h3>
+              <span id="paymentCount">0 total</span>
+            </div>
+            <div id="paymentList" class="ledger"></div>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" hidden></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+  </html>

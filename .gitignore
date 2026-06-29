@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.*
+*.log
+coverage/
+.DS_Store
+Thumbs.db
+frontend/.cache/
+supabase/.temp/
+supabase/.branches/
+sample web apps/
