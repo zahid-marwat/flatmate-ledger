@@ -17,6 +17,9 @@ const els = {
   userView: $("#userView"),
   adminHousePanel: $("#adminHousePanel"),
   adminQuickActions: $("#adminQuickActions"),
+  adminMemberPanel: $("#adminMemberPanel"),
+  adminEditExpensePanel: $("#adminEditExpensePanel"),
+  topActiveGroup: $("#topActiveGroup"),
   workspaceTitle: $("#workspaceTitle"),
   viewEyebrow: $("#viewEyebrow"),
   viewHeadline: $("#viewHeadline"),
@@ -49,8 +52,12 @@ const els = {
   expenseCount: $("#expenseCount"),
   paymentCount: $("#paymentCount"),
   managerPaidByUserId: $("#managerPaidByUserId"),
-  managerHostUserId: $("#managerHostUserId"),
   managerSplitMembers: $("#managerSplitMembers"),
+  paymentGroupSelect: $("#paymentGroupSelect"),
+  paymentPayerUserId: $("#paymentPayerUserId"),
+  userPaymentGroupSelect: $("#userPaymentGroupSelect"),
+  userPaymentPayerUserId: $("#userPaymentPayerUserId"),
+  roleMemberUserId: $("#roleMemberUserId"),
   generateSettlementBtn: $("#generateSettlementBtn"),
   refreshSettlementBtn: $("#refreshSettlementBtn"),
   toast: $("#toast"),
@@ -100,6 +107,18 @@ function isManagement() {
   return ["admin", "manager"].includes(state.role);
 }
 
+function isAdmin() {
+  return state.role === "admin";
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function pkrToMinor(value) {
+  return Math.round(Number(value || 0) * 100);
+}
+
 function setToken(token) {
   state.token = token;
   if (token) {
@@ -117,7 +136,7 @@ function setHouseId(houseId) {
   } else {
     localStorage.removeItem("flatmateLedgerHouseId");
   }
-  els.houseSelect.value = state.houseId;
+  if (els.houseSelect) els.houseSelect.value = state.houseId;
 }
 
 function setAppMode() {
@@ -126,23 +145,27 @@ function setAppMode() {
   els.appView.hidden = !signedIn;
   if (!signedIn) return;
 
-  const admin = isManagement();
-  els.adminView.hidden = !admin;
-  els.adminHousePanel.hidden = !admin;
-  els.adminQuickActions.hidden = !admin;
-  els.userView.hidden = admin;
-  els.workspaceTitle.textContent = admin ? "Management Console" : "My Ledger";
-  els.viewEyebrow.textContent = admin ? `${state.role} Workspace` : "Flatmate Workspace";
+  const canManage = isManagement();
+  els.adminView.hidden = !canManage;
+  els.adminHousePanel.hidden = !isAdmin();
+  els.adminMemberPanel.hidden = !isAdmin();
+  els.adminEditExpensePanel.hidden = !isAdmin();
+  els.adminQuickActions.hidden = !canManage;
+  els.userView.hidden = canManage;
+  els.workspaceTitle.textContent = canManage ? "Group Console" : "My Ledger";
+  els.viewEyebrow.textContent = canManage ? `${state.role} Workspace` : "Flatmate Workspace";
   els.viewHeadline.textContent = admin
-    ? "Track bills, cash, payments, and settlement."
-    : "See your balance, house expenses, and payment status.";
+    ? "Track groups, bills, cash, payments, and settlement."
+    : "See your balance, group expenses, and payment status.";
   els.signedInUser.textContent = state.user.fullName || state.user.contact;
   els.signedInRole.textContent = state.role || "No house role";
 }
 
 function renderSummary(summary) {
   const cards = [
-    ["House", summary.house?.name || "Unknown"],
+    ["Group", summary.house?.name || "Unknown"],
+    ["Total Expenses", money(summary.totalExpensesMinor)],
+    ["Pending Expenses", money(summary.pendingExpenseMinor)],
     ["Collected", money(summary.totalCollectedMinor)],
     ["Pending", money(summary.totalPendingMinor)],
     ["Cash in Hand", money(summary.cashInHandMinor)],
@@ -154,14 +177,15 @@ function renderSummary(summary) {
     </div>
   `).join("");
 
-  els.dashboardSummaryCards.innerHTML = html;
-  els.summaryCards.innerHTML = html;
-  els.userSummaryCards.innerHTML = html;
+  if (els.dashboardSummaryCards) els.dashboardSummaryCards.innerHTML = html;
+  if (els.summaryCards) els.summaryCards.innerHTML = html;
+  if (els.userSummaryCards) els.userSummaryCards.innerHTML = html;
   els.collectedMetric.textContent = money(summary.totalCollectedMinor);
   els.pendingMetric.textContent = money(summary.totalPendingMinor);
   els.cashMetric.textContent = money(summary.cashInHandMinor);
-  els.houseName.textContent = summary.house?.name || "No house selected";
-  els.userHouseName.textContent = summary.house?.name || "No house selected";
+  if (els.houseName) els.houseName.textContent = summary.house?.name || "No group selected";
+  if (els.userHouseName) els.userHouseName.textContent = summary.house?.name || "No group selected";
+  els.topActiveGroup.textContent = summary.house?.name || "No group selected";
   els.balanceCount.textContent = `${summary.balances?.length || 0} open balances`;
 }
 
@@ -213,7 +237,6 @@ function renderMemberControls(members = []) {
   }).join("");
 
   els.managerPaidByUserId.innerHTML = options;
-  els.managerHostUserId.innerHTML = `<option value="">Select host for guest split</option>${options}`;
   els.managerSplitMembers.innerHTML = activeMembers.map((member) => {
     const userId = member.userId || member.user_id;
     return `
@@ -228,17 +251,34 @@ function renderMemberControls(members = []) {
   if (currentUserOption) {
     els.managerPaidByUserId.value = state.user.id;
   }
+
+  const groupOptions = state.memberships.map((membership) => {
+    const groupId = membership.houseId || membership.house_id;
+    const groupName = membership.house?.name || groupId;
+    return `<option value="${groupId}" ${groupId === state.houseId ? "selected" : ""}>${groupName}</option>`;
+  }).join("");
+  els.paymentGroupSelect.innerHTML = groupOptions;
+  els.userPaymentGroupSelect.innerHTML = groupOptions;
+  els.paymentPayerUserId.innerHTML = options;
+  els.userPaymentPayerUserId.innerHTML = options;
+  els.roleMemberUserId.innerHTML = options;
+  els.paymentPayerUserId.value = state.user?.id || "";
+  els.userPaymentPayerUserId.value = state.user?.id || "";
 }
 
 function renderDashboardRoster(members = []) {
-  const activeMembers = members.filter((member) => member.status === "active");
+  const balances = state.currentHouse?.balances || [];
+  const balanceFor = (member) => balances.find((balance) => balance.userId === (member.userId || member.user_id))?.balanceMinor || 0;
+  const activeMembers = members
+    .filter((member) => member.status === "active")
+    .sort((left, right) => balanceFor(left) - balanceFor(right));
   els.dashboardRoster.innerHTML = activeMembers.length
     ? activeMembers.map((member) => `
-      <div class="avatar-card">
+      <div class="avatar-card" data-tooltip="ID: ${member.userId || member.user_id} | Groups: ${state.memberships.length} | Balance: ${money(balanceFor(member))}">
         ${avatarMarkup(member)}
         <div>
           <strong>${memberLabel(member)}</strong>
-          <span>${member.role}</span>
+          <span>${member.role} - ${money(balanceFor(member))}</span>
         </div>
       </div>
     `).join("")
@@ -250,19 +290,6 @@ function renderMembers(members = []) {
   renderMemberControls(members);
   renderDashboardRoster(members);
   els.memberCount.textContent = String(members.length);
-  els.memberList.innerHTML = members.length
-    ? members.map((member) => `
-      <div class="list-item">
-        <div class="list-item-top">
-          <div>
-            <div class="member-inline">${avatarMarkup(member)}<strong>${memberLabel(member)}</strong></div>
-            <div class="list-item-meta">${member.role} - ${member.status}</div>
-          </div>
-          <code>${member.user_id || member.userId}</code>
-        </div>
-      </div>
-    `).join("")
-    : `<div class="list-item">No members yet.</div>`;
 }
 
 function renderHistory(history = []) {
@@ -320,7 +347,7 @@ function parseLines(text, valueKey, { valueScale = "number" } = {}) {
       if (!userId || !Number.isFinite(numericValue)) {
         throw new Error(`Could not parse line: ${line}`);
       }
-      const value = valueScale === "minor" ? Math.trunc(numericValue) : numericValue;
+      const value = valueScale === "pkr" ? pkrToMinor(numericValue) : numericValue;
       return { userId, [valueKey]: value };
     });
 }
@@ -338,6 +365,7 @@ function renderExpenses(expenses = []) {
           <div>
             <strong>${expense.title}</strong>
             <div class="list-item-meta">${expense.expenseDate || ""} - ${expense.splitType} - ${expense.status}</div>
+            <div class="list-item-meta">Expense ID: ${expense.id}</div>
             ${expense.payerContributions?.length ? `<div class="list-item-meta">Paid by ${expense.payerContributions.map((entry) => `${memberLabel(state.members.find((member) => (member.userId || member.user_id) === entry.userId))}: ${money(entry.amountMinor)}`).join(", ")}</div>` : ""}
           </div>
           <div class="expense-actions">
@@ -437,6 +465,7 @@ async function refreshHouse() {
   state.currentHouse = summary;
   renderSummary(summary);
   renderBalances(summary.balances || []);
+  renderDashboardRoster(state.members);
 
   const expenses = await api(`/houses/${state.houseId}/expenses`);
   renderExpenses(expenses.expenses || []);
@@ -455,7 +484,7 @@ async function refreshHouse() {
   }
 
   els.houseSelect.innerHTML = [
-    `<option value="">Select house</option>`,
+    `<option value="">Select group</option>`,
     ...state.memberships.map((membership) => {
       const houseId = membership.houseId || membership.house_id;
       const houseName = membership.house?.name || houseId;
@@ -465,6 +494,7 @@ async function refreshHouse() {
 }
 
 async function createUser(form) {
+  if (!state.houseId) throw new Error("Select a group first");
   await api("/admin/users", {
     method: "POST",
     body: {
@@ -472,10 +502,11 @@ async function createUser(form) {
       contact: form.contact.value,
       password: form.password.value,
       role: form.role.value,
-      setupKey: form.setupKey.value || null,
+      houseId: state.houseId,
     },
   });
-  showToast("Account created. It can log in now.");
+  showToast("Member account created and added.");
+  await refreshHouse();
 }
 
 async function login(form) {
@@ -502,22 +533,20 @@ async function createHouse(form) {
   });
   setHouseId(result.house.id);
   await hydrateSession();
-  showToast("House created");
+  showToast("Group created");
 }
 
 async function addMember(form) {
-  if (!state.houseId) throw new Error("Select or create a house first");
-  await api(`/houses/${state.houseId}/members`, {
-    method: "POST",
-    body: {
-      role: form.role.value,
-      user: {
-        fullName: form.fullName.value,
-        contact: form.contact.value,
-      },
-    },
+  await createUser(form);
+}
+
+async function assignRole(form) {
+  if (!state.houseId) throw new Error("Select a group first");
+  await api(`/houses/${state.houseId}/members/${form.memberUserId.value}`, {
+    method: "PATCH",
+    body: { role: form.role.value },
   });
-  showToast("Member added");
+  showToast("Member role updated");
   await refreshHouse();
 }
 
@@ -532,14 +561,14 @@ async function createExpense(form) {
     ? parseLines(form.unequalSplits.value, "amount")
     : [];
   const payerContributions = form.payerContributions.value
-    ? parseLines(form.payerContributions.value, "amountMinor", { valueScale: "minor" })
+    ? parseLines(form.payerContributions.value, "amountMinor", { valueScale: "pkr" })
     : [];
 
   await api(`/houses/${state.houseId}/expenses`, {
     method: "POST",
     body: {
-      title: form.title.value,
-      amountMinor: Number(form.amountMinor.value),
+      title: form.title.value === "Other" ? form.customTitle.value : form.title.value,
+      amountPkr: Number(form.amountPkr.value),
       expenseDate: form.expenseDate.value,
       splitType,
       note: form.note.value,
@@ -550,8 +579,6 @@ async function createExpense(form) {
       percentageSplits,
       unequalSplits,
       payerContributions,
-      hostUserId: form.hostUserId.value || null,
-      guestShareMinor: Number(form.guestShareMinor.value || 0),
       requiresApproval: false,
     },
   });
@@ -564,8 +591,8 @@ async function submitUserExpense(form) {
   await api(`/houses/${state.houseId}/expenses`, {
     method: "POST",
     body: {
-      title: form.title.value,
-      amountMinor: Number(form.amountMinor.value),
+      title: form.title.value === "Other" ? form.customTitle.value : form.title.value,
+      amountPkr: Number(form.amountPkr.value),
       expenseDate: form.expenseDate.value,
       splitType: "equal_all",
       note: form.note.value,
@@ -578,19 +605,56 @@ async function submitUserExpense(form) {
 }
 
 async function createPayment(form) {
-  if (!state.houseId) throw new Error("Select or create a house first");
-  await api(`/houses/${state.houseId}/payments`, {
+  const groupId = form.groupId?.value || state.houseId;
+  if (!groupId) throw new Error("Select a group first");
+  const receiver = state.members.find((member) => member.role === "manager") || state.members.find((member) => member.isDefaultPayer);
+  await api(`/houses/${groupId}/payments`, {
     method: "POST",
     body: {
       payerUserId: form.payerUserId.value,
-      receiverUserId: form.receiverUserId.value,
-      amountMinor: Number(form.amountMinor.value),
-      method: form.method.value,
-      proofUrl: form.proofUrl.value || null,
+      receiverUserId: receiver?.userId || receiver?.user_id || state.user.id,
+      amountPkr: Number(form.amountPkr.value),
+      method: "cash",
+      proofUrl: null,
     },
   });
-  showToast("Payment created");
+  showToast("Cash deposit submitted");
   await refreshHouse();
+}
+
+async function editExpense(form) {
+  if (!state.houseId) throw new Error("Select a group first");
+  const body = {};
+  if (form.title.value) body.title = form.title.value === "Other" ? form.customTitle.value : form.title.value;
+  if (form.amountPkr.value) body.amountPkr = Number(form.amountPkr.value);
+  if (form.splitType.value) body.splitType = form.splitType.value;
+  const included = String(form.includedUsers.value || "")
+    .split(",")
+    .map((item) => resolveUserId(item))
+    .filter(Boolean);
+  if (included.length) {
+    body.selectedUserIds = included;
+    body.participantUserIds = included;
+  }
+  if (form.percentageSplits.value) body.percentageSplits = parseLines(form.percentageSplits.value, "percent");
+  if (form.unequalSplits.value) body.unequalSplits = parseLines(form.unequalSplits.value, "amount");
+  await api(`/houses/${state.houseId}/expenses/${form.expenseId.value}`, {
+    method: "PATCH",
+    body,
+  });
+  showToast("Expense updated");
+  await refreshHouse();
+}
+
+async function changePassword(form) {
+  await api("/me/password", {
+    method: "POST",
+    body: {
+      currentPassword: form.currentPassword.value,
+      newPassword: form.newPassword.value,
+    },
+  });
+  showToast("Password changed");
 }
 
 async function confirmPayment(form) {
@@ -625,6 +689,7 @@ async function generateSettlement() {
 
 function bindForm(id, handler) {
   const form = document.getElementById(id);
+  if (!form) return;
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
@@ -636,15 +701,19 @@ function bindForm(id, handler) {
   });
 }
 
-bindForm("createUserForm", createUser);
 bindForm("loginForm", login);
+bindForm("passwordForm", changePassword);
 bindForm("houseForm", createHouse);
 bindForm("memberForm", addMember);
+bindForm("roleForm", assignRole);
 bindForm("expenseForm", createExpense);
+bindForm("editExpenseForm", editExpense);
 bindForm("userExpenseForm", submitUserExpense);
 bindForm("paymentForm", createPayment);
+bindForm("userPaymentForm", createPayment);
 bindForm("confirmPaymentForm", confirmPayment);
 bindForm("disputeForm", createDispute);
+bindForm("userDisputeForm", createDispute);
 
 els.logoutBtn.addEventListener("click", () => {
   setToken("");
@@ -716,4 +785,16 @@ hydrateSession().catch((error) => {
   setToken("");
   setAppMode();
   showToast(error.message, "error");
+});
+
+document.querySelectorAll("[data-toggle-password]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const input = button.parentElement.querySelector("input");
+    input.type = input.type === "password" ? "text" : "password";
+    button.textContent = input.type === "password" ? "Show" : "Hide";
+  });
+});
+
+document.querySelectorAll('input[type="date"]').forEach((input) => {
+  if (!input.value) input.value = today();
 });

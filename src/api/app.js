@@ -76,6 +76,10 @@ function isManagementRole(role) {
   return ["admin", "manager"].includes(role);
 }
 
+function isAdminRole(role) {
+  return role === "admin";
+}
+
 function getHouseRole(houseId, userId) {
   return store.houseMembers.get(`${houseId}:${userId}`)?.role || null;
 }
@@ -110,15 +114,32 @@ function getHouseSummary(houseId) {
     return sum;
   }, 0);
 
+  const totalExpensesMinor = expenses
+    .filter((expense) => expense.status === "approved")
+    .reduce((sum, expense) => sum + expense.amountMinor, 0);
+
+  const pendingExpenseMinor = expenses
+    .filter((expense) => expense.status === "pending_approval")
+    .reduce((sum, expense) => sum + expense.amountMinor, 0);
+
   return {
     house,
     expenseCount: expenses.length,
     paymentCount: payments.length,
+    totalExpensesMinor,
+    pendingExpenseMinor,
     totalCollectedMinor,
     totalPendingMinor,
     cashInHandMinor,
     balances,
   };
+}
+
+function toMinorFromRequest(body, minorKey = "amountMinor", pkrKey = "amountPkr") {
+  if (body[pkrKey] !== undefined && body[pkrKey] !== null && body[pkrKey] !== "") {
+    return Math.round(Number(body[pkrKey]) * 100);
+  }
+  return body[minorKey];
 }
 
 async function handleAuthRequest(request) {
@@ -139,10 +160,17 @@ async function handleAuthVerify(request) {
 }
 
 async function handleCreatePasswordUser(request) {
+  const actor = getSessionUser(request);
   const body = await readJson(request);
   const configuredSetupKey = process.env.ADMIN_SETUP_KEY;
-  if (configuredSetupKey && body.setupKey !== configuredSetupKey) {
-    throw new ApiError(403, "Invalid admin setup key");
+  const isSetupKeyValid = configuredSetupKey && body.setupKey === configuredSetupKey;
+  if (actor) {
+    const houseId = requireString(body.houseId, "houseId");
+    if (!isAdminRole(getHouseRole(houseId, actor.id))) {
+      throw new ApiError(403, "Only the admin can create member accounts");
+    }
+  } else if (!isSetupKeyValid) {
+    throw new ApiError(403, "Only the admin can create member accounts");
   }
 
   const role = requireOneOf(body.role || "flatmate", "role", ["admin", "manager", "flatmate", "viewer"]);
@@ -153,7 +181,19 @@ async function handleCreatePasswordUser(request) {
     role,
   });
 
-  if (isManagementRole(role)) {
+  if (actor && body.houseId) {
+    await houseService.addMember({
+      houseId: requireString(body.houseId, "houseId"),
+      actorUserId: actor.id,
+      user: {
+        id: result.user.id,
+        fullName: result.user.fullName,
+        contact: result.user.contact,
+        avatarUrl: optionalString(body.avatarUrl),
+      },
+      role,
+    });
+  } else if (isManagementRole(role)) {
     const hasManagerMembership = [...store.houseMembers.values()].some(
       (member) => member.userId === result.user.id && isManagementRole(member.role) && member.status === "active",
     );
@@ -200,6 +240,16 @@ async function handlePasswordLogin(request) {
   }));
 }
 
+async function handleChangePassword(request) {
+  const user = ensureUser(request);
+  const body = await readJson(request);
+  return jsonResponse(await authService.changePassword({
+    userId: user.id,
+    currentPassword: requireString(body.currentPassword, "currentPassword"),
+    newPassword: requireString(body.newPassword, "newPassword"),
+  }));
+}
+
 function handleMe(request) {
   const user = ensureUser(request);
   const memberships = [...store.houseMembers.values()]
@@ -214,6 +264,12 @@ function handleMe(request) {
 
 async function handleCreateHouse(request) {
   const user = ensureUser(request);
+  const canCreateGroup = [...store.houseMembers.values()].some(
+    (member) => member.userId === user.id && member.status === "active" && member.role === "admin",
+  );
+  if (!canCreateGroup) {
+    throw new ApiError(403, "Only the admin can create groups");
+  }
   const body = await readJson(request);
   return jsonResponse(await houseService.createHouse({
     creatorUserId: user.id,
@@ -264,6 +320,19 @@ async function handleAddMember(request, params) {
   }), 201);
 }
 
+async function handleUpdateMember(request, params) {
+  const user = ensureUser(request);
+  const body = await readJson(request);
+  return jsonResponse(await houseService.updateMember({
+    houseId: params.id,
+    actorUserId: user.id,
+    memberUserId: params.userId,
+    patch: {
+      role: requireOneOf(body.role, "role", ["flatmate", "manager", "admin", "viewer"]),
+    },
+  }));
+}
+
 async function handleCreateInvitation(request, params) {
   const user = ensureUser(request);
   const body = await readJson(request);
@@ -283,19 +352,19 @@ async function handleCreateExpense(request, params) {
     actorUserId: user.id,
     payload: {
       title: requireString(body.title, "title"),
-      amountMinor: requireInteger(body.amountMinor, "amountMinor", { min: 1 }),
+      amountMinor: requireInteger(toMinorFromRequest(body), "amount", { min: 1 }),
       expenseDate: requireString(body.expenseDate || new Date().toISOString().slice(0, 10), "expenseDate"),
       dueDate: optionalString(body.dueDate),
       categoryId: optionalString(body.categoryId),
       note: optionalString(body.note),
-      splitType: requireOneOf(body.splitType, "splitType", ["equal_all", "equal_selected", "percentage", "unequal", "guest_to_host"]),
+      splitType: requireOneOf(body.splitType, "splitType", ["equal_all", "equal_selected", "percentage", "unequal"]),
       participantUserIds: Array.isArray(body.participantUserIds) ? body.participantUserIds : [],
       selectedUserIds: Array.isArray(body.selectedUserIds) ? body.selectedUserIds : [],
       percentageSplits: Array.isArray(body.percentageSplits) ? body.percentageSplits : [],
       unequalSplits: Array.isArray(body.unequalSplits) ? body.unequalSplits : [],
       payerContributions: Array.isArray(body.payerContributions) ? body.payerContributions : [],
-      guestShareMinor: body.guestShareMinor || 0,
-      hostUserId: optionalString(body.hostUserId),
+      guestShareMinor: 0,
+      hostUserId: null,
       currency: optionalString(body.currency) || "PKR",
       paidByUserId: optionalString(body.paidByUserId) || user.id,
       receiptUrl: optionalString(body.receiptUrl),
@@ -306,6 +375,29 @@ async function handleCreateExpense(request, params) {
       recurrenceId: optionalString(body.recurrenceId),
     },
   }), 201);
+}
+
+async function handleUpdateExpense(request, params) {
+  const user = ensureUser(request);
+  const body = await readJson(request);
+  return jsonResponse(await expenseService.updateExpense({
+    houseId: params.id,
+    actorUserId: user.id,
+    expenseId: params.expenseId,
+    payload: {
+      title: optionalString(body.title),
+      amountMinor: body.amountPkr !== undefined ? toMinorFromRequest(body) : body.amountMinor,
+      expenseDate: optionalString(body.expenseDate),
+      note: optionalString(body.note),
+      splitType: body.splitType ? requireOneOf(body.splitType, "splitType", ["equal_all", "equal_selected", "percentage", "unequal"]) : undefined,
+      participantUserIds: Array.isArray(body.participantUserIds) ? body.participantUserIds : undefined,
+      selectedUserIds: Array.isArray(body.selectedUserIds) ? body.selectedUserIds : undefined,
+      percentageSplits: Array.isArray(body.percentageSplits) ? body.percentageSplits : undefined,
+      unequalSplits: Array.isArray(body.unequalSplits) ? body.unequalSplits : undefined,
+      payerContributions: Array.isArray(body.payerContributions) ? body.payerContributions : undefined,
+      paidByUserId: optionalString(body.paidByUserId),
+    },
+  }));
 }
 
 function handleListExpenses(request, params) {
@@ -345,7 +437,7 @@ async function handleCreatePayment(request, params) {
       expenseId: optionalString(body.expenseId),
       payerUserId: requireString(body.payerUserId, "payerUserId"),
       receiverUserId: requireString(body.receiverUserId, "receiverUserId"),
-      amountMinor: requireInteger(body.amountMinor, "amountMinor", { min: 1 }),
+      amountMinor: requireInteger(toMinorFromRequest(body), "amount", { min: 1 }),
       currency: optionalString(body.currency) || "PKR",
       method: requireOneOf(body.method || "cash", "method", ["cash", "bank", "wallet"]),
       paymentDate: requireString(body.paymentDate || new Date().toISOString().slice(0, 10), "paymentDate"),
@@ -535,6 +627,7 @@ const routes = [
   ["GET", "/health", handleHealth],
   ["POST", "/admin/users", handleCreatePasswordUser],
   ["POST", "/auth/login", handlePasswordLogin],
+  ["POST", "/me/password", handleChangePassword],
   ["POST", "/auth/request-otp", handleAuthRequest],
   ["POST", "/auth/verify-otp", handleAuthVerify],
   ["GET", "/me", handleMe],
@@ -542,9 +635,11 @@ const routes = [
   ["GET", "/houses/:id", handleGetHouse],
   ["GET", "/houses/:id/members", handleListMembers],
   ["POST", "/houses/:id/members", handleAddMember],
+  ["PATCH", "/houses/:id/members/:userId", handleUpdateMember],
   ["POST", "/houses/:id/invitations", handleCreateInvitation],
   ["POST", "/houses/:id/expenses", handleCreateExpense],
   ["GET", "/houses/:id/expenses", handleListExpenses],
+  ["PATCH", "/houses/:id/expenses/:expenseId", handleUpdateExpense],
   ["POST", "/houses/:id/expenses/approve", handleApproveExpense],
   ["POST", "/houses/:id/expenses/reject", handleRejectExpense],
   ["POST", "/houses/:id/payments", handleCreatePayment],

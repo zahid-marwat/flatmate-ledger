@@ -7,6 +7,11 @@ function hasManagementRole(store, houseId, userId) {
   return ["admin", "manager"].includes(member?.role) && member.status === "active";
 }
 
+function isAdmin(store, houseId, userId) {
+  const member = store.houseMembers.get(`${houseId}:${userId}`);
+  return member?.role === "admin" && member.status === "active";
+}
+
 function assertHouseMember(store, houseId, userId) {
   const member = store.houseMembers.get(`${houseId}:${userId}`);
   if (!member || member.status !== "active") {
@@ -69,6 +74,32 @@ export function createExpenseService(store, logActivity, persistence) {
   }
 
   return {
+    buildSplits({ houseId, paidByUserId, payload, amountMinor }) {
+      const house = store.houses.get(houseId);
+      const participantUserIds = payload.participantUserIds?.length
+        ? payload.participantUserIds
+        : [...store.houseMembers.values()]
+            .filter((member) => member.houseId === houseId && member.status === "active")
+            .map((member) => member.userId);
+
+      const splits = calculateExpenseSplits({
+        amountMinor,
+        splitType: payload.splitType,
+        paidByUserId,
+        participantUserIds,
+        selectedUserIds: payload.selectedUserIds || [],
+        percentageSplits: payload.percentageSplits || [],
+        unequalSplits: payload.unequalSplits || [],
+        guestShareMinor: 0,
+        hostUserId: null,
+        currency: payload.currency || house?.baseCurrency || "PKR",
+      });
+      for (const split of splits) {
+        assertHouseMember(store, houseId, split.userId);
+      }
+      return splits;
+    },
+
     async createExpense({ houseId, actorUserId, payload }) {
       assertHouseMember(store, houseId, actorUserId);
       const actorCanManage = hasManagementRole(store, houseId, actorUserId);
@@ -78,12 +109,6 @@ export function createExpenseService(store, logActivity, persistence) {
 
       const paidByUserId = actorCanManage ? payload.paidByUserId || actorUserId : actorUserId;
       assertHouseMember(store, houseId, paidByUserId);
-
-      const participantUserIds = payload.participantUserIds?.length
-        ? payload.participantUserIds
-        : [...store.houseMembers.values()]
-            .filter((member) => member.houseId === houseId && member.status === "active")
-            .map((member) => member.userId);
 
       const amountMinor = Math.trunc(Number(payload.amountMinor));
       if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
@@ -108,21 +133,7 @@ export function createExpenseService(store, logActivity, persistence) {
         assertHouseMember(store, houseId, contribution.userId);
       }
 
-      const splits = calculateExpenseSplits({
-        amountMinor,
-        splitType: payload.splitType,
-        paidByUserId,
-        participantUserIds,
-        selectedUserIds: payload.selectedUserIds || [],
-        percentageSplits: payload.percentageSplits || [],
-        unequalSplits: payload.unequalSplits || [],
-        guestShareMinor: payload.guestShareMinor || 0,
-        hostUserId: payload.hostUserId || null,
-        currency: payload.currency || house.baseCurrency || "PKR",
-      });
-      for (const split of splits) {
-        assertHouseMember(store, houseId, split.userId);
-      }
+      const splits = this.buildSplits({ houseId, paidByUserId, payload, amountMinor });
 
       const expenseId = createId();
       const needsApproval = actorCanManage ? Boolean(payload.requiresApproval) : true;
@@ -159,6 +170,70 @@ export function createExpenseService(store, logActivity, persistence) {
       logActivity(houseId, actorUserId, "expense.created", "expense", expenseId, { amountMinor, splitType: payload.splitType, status });
 
       return expense;
+    },
+
+    async updateExpense({ houseId, actorUserId, expenseId, payload }) {
+      if (!isAdmin(store, houseId, actorUserId)) {
+        throw new ApiError(403, "Only the admin can edit expenses");
+      }
+      const expense = store.expenses.get(expenseId);
+      if (!expense || expense.houseId !== houseId) throw new ApiError(404, "Expense not found");
+
+      const amountMinor = payload.amountMinor === undefined
+        ? expense.amountMinor
+        : Math.trunc(Number(payload.amountMinor));
+      if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
+        throw new ApiError(400, "amountMinor must be a positive integer");
+      }
+
+      const paidByUserId = payload.paidByUserId || expense.paidByUserId || actorUserId;
+      assertHouseMember(store, houseId, paidByUserId);
+      const splitPayload = {
+        ...expense,
+        ...payload,
+        splitType: payload.splitType || expense.splitType,
+        selectedUserIds: payload.selectedUserIds || expense.splits.map((split) => split.userId),
+        participantUserIds: payload.participantUserIds || expense.splits.map((split) => split.userId),
+        percentageSplits: payload.percentageSplits || expense.splits.map((split) => ({
+          userId: split.userId,
+          percent: expense.amountMinor ? (split.owedAmountMinor / expense.amountMinor) * 100 : 0,
+        })),
+        unequalSplits: payload.unequalSplits || expense.splits.map((split) => ({
+          userId: split.userId,
+          amount: split.owedAmountMinor / 100,
+        })),
+      };
+      const splits = this.buildSplits({ houseId, paidByUserId, payload: splitPayload, amountMinor });
+      const payerContributions = payload.payerContributions?.length
+        ? payload.payerContributions.map((entry) => ({
+            userId: entry.userId,
+            amountMinor: Math.trunc(Number(entry.amountMinor)),
+          }))
+        : [{ userId: paidByUserId, amountMinor }];
+
+      const contributionTotal = payerContributions.reduce((sum, entry) => sum + entry.amountMinor, 0);
+      if (contributionTotal !== amountMinor) {
+        throw new ApiError(400, "Payer contributions must equal the expense total");
+      }
+
+      const updated = {
+        ...expense,
+        title: payload.title || expense.title,
+        note: payload.note ?? expense.note,
+        amountMinor,
+        expenseDate: payload.expenseDate || expense.expenseDate,
+        splitType: splitPayload.splitType,
+        paidByUserId,
+        payerContributions,
+        splits,
+        updatedAt: new Date().toISOString(),
+      };
+      store.expenses.set(expenseId, updated);
+      store.expenseSplits.set(expenseId, splits.map((split) => ({ id: createId(), expenseId, ...split })));
+      await persistence.saveExpense(updated);
+      await persistence.saveExpenseSplits(expenseId, splits);
+      logActivity(houseId, actorUserId, "expense.updated", "expense", expenseId, { amountMinor, splitType: updated.splitType });
+      return updated;
     },
 
     async approveExpense({ houseId, actorUserId, expenseId }) {

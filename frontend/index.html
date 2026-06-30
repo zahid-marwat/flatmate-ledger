@@ -22,24 +22,12 @@
 
         <form id="loginForm" class="stack">
           <h2>Login</h2>
-          <input name="contact" placeholder="Email or phone" autocomplete="username" />
-          <input name="password" type="password" placeholder="Password" autocomplete="current-password" />
+          <input name="contact" placeholder="Username" autocomplete="username" />
+          <label class="password-field">
+            <input name="password" type="password" placeholder="Password" autocomplete="current-password" />
+            <button type="button" data-toggle-password>Show</button>
+          </label>
           <button type="submit">Enter Ledger</button>
-        </form>
-
-        <form id="createUserForm" class="stack setup-box">
-          <h2>Create User</h2>
-          <input name="fullName" placeholder="Full name" />
-          <input name="contact" placeholder="Email or phone" autocomplete="username" />
-          <input name="password" type="password" placeholder="Password" autocomplete="new-password" />
-          <select name="role">
-            <option value="admin">Admin</option>
-            <option value="manager">Manager</option>
-            <option value="flatmate">Flatmate</option>
-            <option value="viewer">Viewer</option>
-          </select>
-          <input name="setupKey" type="password" placeholder="Setup key, if enabled" />
-          <button type="submit">Create Account</button>
         </form>
       </section>
     </main>
@@ -54,29 +42,16 @@
           </div>
         </div>
 
-        <section class="panel">
-          <h2>Session</h2>
-          <div class="token-box">
-            <span>Signed in as</span>
-            <strong id="signedInUser">Not signed in</strong>
-            <span>Role</span>
-            <strong id="signedInRole">Unknown</strong>
-            <span>Session</span>
-            <code id="tokenState">Not signed in</code>
-          </div>
-          <button id="logoutBtn" type="button" class="subtle-space">Logout</button>
-        </section>
-
         <section id="adminHousePanel" class="panel">
-          <h2>House</h2>
+          <h2>Group</h2>
           <form id="houseForm" class="stack">
-            <input name="name" placeholder="House name" />
+            <input name="name" placeholder="Group name" />
             <input name="city" placeholder="City" />
             <input name="address" placeholder="Address" />
-            <button type="submit">Create House</button>
+            <button type="submit">Create Group</button>
           </form>
           <label class="select-label">
-            <span>Active house</span>
+            <span>Active group</span>
             <select id="houseSelect"></select>
           </label>
         </section>
@@ -86,15 +61,43 @@
           <div class="actions">
             <button data-jump="expense">New Expense</button>
             <button data-jump="payment">New Payment</button>
-            <button data-jump="member">Invite Member</button>
+            <button data-jump="member">Add Member</button>
           </div>
         </section>
       </aside>
 
       <section class="content">
+        <nav class="top-panel">
+          <div>
+            <span class="eyebrow">Trace Panel</span>
+            <div class="trace-links">
+              <a href="#historyList">Event History</a>
+              <a href="#houseSelect">Active Groups</a>
+              <a href="#dashboardRoster">Group Members</a>
+            </div>
+          </div>
+          <div class="active-group-pill">
+            <span>Active group</span>
+            <strong id="topActiveGroup">No group selected</strong>
+          </div>
+          <details class="account-menu">
+            <summary>
+              <span id="signedInUser">Not signed in</span>
+              <small id="signedInRole">Unknown</small>
+            </summary>
+            <form id="passwordForm" class="stack compact">
+              <input name="currentPassword" type="password" placeholder="Current password" />
+              <input name="newPassword" type="password" placeholder="New password" />
+              <button type="submit">Change Password</button>
+            </form>
+            <code id="tokenState">Not signed in</code>
+            <button id="logoutBtn" type="button" class="subtle-space">Logout</button>
+          </details>
+        </nav>
+
         <header class="hero">
           <div>
-            <p class="eyebrow" id="viewEyebrow">House Workspace</p>
+            <p class="eyebrow" id="viewEyebrow">Group Workspace</p>
             <h2 id="viewHeadline">Track bills, cash, payments, and settlement.</h2>
           </div>
           <div class="hero-metrics">
@@ -114,9 +117,9 @@
         </header>
 
         <section id="dashboardView" class="grid">
-          <article class="panel wide">
+          <article id="adminMemberPanel" class="panel wide">
             <div class="panel-head">
-              <h3>Flat # 207 Dashboard</h3>
+              <h3>Group Dashboard</h3>
               <span>Visible to admin, manager, and flatmates</span>
             </div>
             <div id="dashboardSummaryCards" class="summary-grid"></div>
@@ -124,7 +127,7 @@
 
           <article class="panel">
             <div class="panel-head">
-              <h3>Flatmates</h3>
+              <h3>Members</h3>
               <span>Avatar roster</span>
             </div>
             <div id="dashboardRoster" class="avatar-grid"></div>
@@ -142,29 +145,34 @@
         <section id="adminView" class="grid">
           <article class="panel wide">
             <div class="panel-head">
-              <h3>House Summary</h3>
-              <span id="houseName">No house selected</span>
-            </div>
-            <div id="summaryCards" class="summary-grid"></div>
-          </article>
-
-          <article class="panel">
-            <div class="panel-head">
-              <h3>Members</h3>
+              <h3>Add Member Account</h3>
               <span id="memberCount">0</span>
             </div>
             <form id="memberForm" class="stack compact">
               <input name="fullName" placeholder="Member name" />
-              <input name="contact" placeholder="Phone or email" />
+              <input name="contact" placeholder="Username" />
+              <label class="password-field">
+                <input name="password" type="password" placeholder="Initial password" />
+                <button type="button" data-toggle-password>Show</button>
+              </label>
               <select name="role">
                 <option value="flatmate">Flatmate</option>
                 <option value="manager">Manager</option>
                 <option value="admin">Admin</option>
                 <option value="viewer">Viewer</option>
               </select>
-              <button type="submit">Invite Member</button>
+              <button type="submit">Create and Add Member</button>
             </form>
-            <div id="memberList" class="list"></div>
+            <form id="roleForm" class="stack compact subtle-space">
+              <select id="roleMemberUserId" name="memberUserId"></select>
+              <select name="role">
+                <option value="manager">Manager</option>
+                <option value="flatmate">Flatmate</option>
+                <option value="admin">Admin</option>
+                <option value="viewer">Viewer</option>
+              </select>
+              <button type="submit">Assign Role</button>
+            </form>
           </article>
 
           <article class="panel">
@@ -173,15 +181,21 @@
               <span>Approval flow ready</span>
             </div>
             <form id="expenseForm" class="stack compact">
-              <input name="title" placeholder="Bill title" />
-              <input name="amountMinor" placeholder="Amount in paisa" />
+              <select name="title">
+                <option value="Water">Water</option>
+                <option value="Dinner">Dinner</option>
+                <option value="Lunch">Lunch</option>
+                <option value="SaudaSalf">SaudaSalf</option>
+                <option value="Other">Other</option>
+              </select>
+              <input name="customTitle" placeholder="Other title" />
+              <input name="amountPkr" placeholder="Amount in PKR" />
               <input name="expenseDate" type="date" />
               <select name="splitType">
                 <option value="equal_all">Equal all</option>
                 <option value="equal_selected">Equal selected</option>
                 <option value="percentage">Percentage</option>
                 <option value="unequal">Unequal</option>
-                <option value="guest_to_host">Guest to host</option>
               </select>
               <label class="field-label">
                 <span>Paid by</span>
@@ -191,36 +205,56 @@
                 <span>Included in split</span>
                 <div id="managerSplitMembers" class="check-grid"></div>
               </label>
-              <textarea name="payerContributions" rows="3" placeholder="Optional multi-payer lines, e.g. asfandyar=10000"></textarea>
+              <textarea name="payerContributions" rows="3" placeholder="Optional multi-payer lines in PKR, e.g. asfandyar=10000"></textarea>
               <textarea name="percentageSplits" rows="3" placeholder="For percentage split, e.g. zahid=50&#10;asfandyar=50"></textarea>
               <textarea name="unequalSplits" rows="3" placeholder="For unequal split, amounts in PKR, e.g. zahid=1200"></textarea>
-              <label class="field-label">
-                <span>Guest host</span>
-                <select id="managerHostUserId" name="hostUserId"></select>
-              </label>
-              <input name="guestShareMinor" placeholder="Guest share in paisa" />
               <textarea name="note" rows="3" placeholder="Note"></textarea>
               <input name="receiptUrl" placeholder="Receipt URL" />
               <button type="submit">Create Approved Expense</button>
             </form>
           </article>
 
+          <article id="adminEditExpensePanel" class="panel">
+            <div class="panel-head">
+              <h3>Edit Submitted Expense</h3>
+              <span>Admin only</span>
+            </div>
+            <form id="editExpenseForm" class="stack compact">
+              <input name="expenseId" placeholder="Expense ID" />
+              <select name="title">
+                <option value="">Keep title</option>
+                <option value="Water">Water</option>
+                <option value="Dinner">Dinner</option>
+                <option value="Lunch">Lunch</option>
+                <option value="SaudaSalf">SaudaSalf</option>
+                <option value="Other">Other</option>
+              </select>
+              <input name="customTitle" placeholder="Other title" />
+              <input name="amountPkr" placeholder="New amount in PKR" />
+              <select name="splitType">
+                <option value="">Keep split</option>
+                <option value="equal_all">Equal all</option>
+                <option value="equal_selected">Equal selected</option>
+                <option value="percentage">Percentage</option>
+                <option value="unequal">Unequal</option>
+              </select>
+              <textarea name="includedUsers" rows="2" placeholder="Included usernames, comma separated, e.g. zahid,muavia,saad"></textarea>
+              <textarea name="percentageSplits" rows="3" placeholder="Weightage %, e.g. zahid=50&#10;muavia=50"></textarea>
+              <textarea name="unequalSplits" rows="3" placeholder="Unequal amounts in PKR, e.g. zahid=1200"></textarea>
+              <button type="submit">Update Expense</button>
+            </form>
+          </article>
+
           <article class="panel">
             <div class="panel-head">
-              <h3>Payment</h3>
-              <span>Cash and proof support</span>
+              <h3>Cash Deposit</h3>
+              <span>Manager approval required for users</span>
             </div>
             <form id="paymentForm" class="stack compact">
-              <input name="payerUserId" placeholder="Payer user ID" />
-              <input name="receiverUserId" placeholder="Receiver user ID" />
-              <input name="amountMinor" placeholder="Amount in paisa" />
-              <select name="method">
-                <option value="cash">Cash</option>
-                <option value="bank">Bank</option>
-                <option value="wallet">Wallet</option>
-              </select>
-              <input name="proofUrl" placeholder="Proof URL" />
-              <button type="submit">Create Payment</button>
+              <select id="paymentGroupSelect" name="groupId"></select>
+              <select id="paymentPayerUserId" name="payerUserId"></select>
+              <input name="amountPkr" placeholder="Amount in PKR" />
+              <button type="submit">Submit Cash Deposit</button>
             </form>
             <form id="confirmPaymentForm" class="stack compact subtle-space">
               <input name="paymentId" placeholder="Payment ID to confirm" />
@@ -257,10 +291,22 @@
         <section id="userView" class="grid" hidden>
           <article class="panel wide">
             <div class="panel-head">
-              <h3>My House</h3>
+              <h3>My Group</h3>
               <span id="userHouseName">No house selected</span>
             </div>
             <div id="userSummaryCards" class="summary-grid"></div>
+          </article>
+
+          <article class="panel wide">
+            <div class="panel-head">
+              <h3>Raise Dispute</h3>
+              <span>For a specific expense</span>
+            </div>
+            <form id="userDisputeForm" class="stack compact">
+              <input name="expenseId" placeholder="Expense ID" />
+              <textarea name="reason" rows="3" placeholder="Reason"></textarea>
+              <button type="submit">Raise Dispute</button>
+            </form>
           </article>
 
           <article class="panel wide">
@@ -277,12 +323,32 @@
               <span>Manager approval required</span>
             </div>
             <form id="userExpenseForm" class="stack compact">
-              <input name="title" placeholder="Bill title" />
-              <input name="amountMinor" placeholder="Amount in paisa" />
+              <select name="title">
+                <option value="Water">Water</option>
+                <option value="Dinner">Dinner</option>
+                <option value="Lunch">Lunch</option>
+                <option value="SaudaSalf">SaudaSalf</option>
+                <option value="Other">Other</option>
+              </select>
+              <input name="customTitle" placeholder="Other title" />
+              <input name="amountPkr" placeholder="Amount in PKR" />
               <input name="expenseDate" type="date" />
               <textarea name="note" rows="3" placeholder="Note"></textarea>
               <input name="receiptUrl" placeholder="Receipt URL" />
               <button type="submit">Submit for Approval</button>
+            </form>
+          </article>
+
+          <article class="panel wide">
+            <div class="panel-head">
+              <h3>Submit Cash Deposit</h3>
+              <span>Manager approval required</span>
+            </div>
+            <form id="userPaymentForm" class="stack compact">
+              <select id="userPaymentGroupSelect" name="groupId"></select>
+              <select id="userPaymentPayerUserId" name="payerUserId"></select>
+              <input name="amountPkr" placeholder="Amount in PKR" />
+              <button type="submit">Submit Deposit</button>
             </form>
           </article>
         </section>

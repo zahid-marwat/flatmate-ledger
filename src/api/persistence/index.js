@@ -351,6 +351,7 @@ export function createPersistence(store) {
     },
     async saveExpenseSplits(expenseId, splits) {
       if (!client.enabled) return;
+      await client.remove("expense_splits", { expense_id: expenseId });
       await client.insert("expense_splits", splits.map((split) => ({
         expense_id: expenseId,
         user_id: split.userId,

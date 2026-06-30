@@ -29,6 +29,7 @@ export function createPaymentService(store, logActivity, expenseService, persist
         throw new ApiError(400, "receiverUserId is required");
       }
       assertHouseMember(store, houseId, payload.receiverUserId);
+      const actorCanConfirm = hasManagementRole(store, houseId, actorUserId);
 
       const paymentId = createId();
       const payment = {
@@ -42,15 +43,23 @@ export function createPaymentService(store, logActivity, expenseService, persist
         method: payload.method || "cash",
         paymentDate: payload.paymentDate || new Date().toISOString().slice(0, 10),
         proofUrl: payload.proofUrl || null,
-        confirmationStatus: "pending",
-        confirmedBy: null,
-        confirmedAt: null,
+        confirmationStatus: actorCanConfirm ? "confirmed" : "pending",
+        confirmedBy: actorCanConfirm ? actorUserId : null,
+        confirmedAt: actorCanConfirm ? new Date().toISOString() : null,
         note: payload.note || null,
         createdAt: new Date().toISOString(),
       };
 
       store.payments.set(paymentId, payment);
       await persistence.savePayment(payment);
+      if (payment.confirmationStatus === "confirmed" && payment.method === "cash") {
+        await expenseService.recordPaymentConfirmation({
+          houseId,
+          actorUserId,
+          payment,
+          approved: true,
+        });
+      }
       logActivity(houseId, actorUserId, "payment.created", "payment", paymentId, { amountMinor, method: payment.method });
       return payment;
     },

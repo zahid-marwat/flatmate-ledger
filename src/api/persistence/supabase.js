@@ -66,6 +66,13 @@ export function createSupabaseClient() {
     return request(`${table}?${query}`, { method: "PATCH", body });
   }
 
+  async function remove(table, filters) {
+    const query = Object.entries(filters)
+      .map(([key, value]) => `${encodeURIComponent(key)}=eq.${encodeURIComponent(value)}`)
+      .join("&");
+    return request(`${table}?${query}`, { method: "DELETE" });
+  }
+
   return {
     enabled,
     request,
@@ -73,5 +80,6 @@ export function createSupabaseClient() {
     insert,
     upsert,
     patch,
+    remove,
   };
 }

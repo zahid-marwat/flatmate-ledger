@@ -1,8 +1,8 @@
 import { ApiError } from "../errors.js";
 import { createId } from "../id.js";
 
-function hasManagementRole(member) {
-  return ["admin", "manager"].includes(member?.role) && member.status === "active";
+function isAdmin(member) {
+  return member?.role === "admin" && member.status === "active";
 }
 
 export function createHouseService(store, logActivity, persistence) {
@@ -69,8 +69,8 @@ export function createHouseService(store, logActivity, persistence) {
     async addMember({ houseId, actorUserId, user, role = "flatmate" }) {
       assertHouseMember(houseId, actorUserId);
       const actor = store.houseMembers.get(`${houseId}:${actorUserId}`);
-      if (!hasManagementRole(actor)) {
-        throw new ApiError(403, "Only an admin or manager can add members");
+      if (!isAdmin(actor)) {
+        throw new ApiError(403, "Only the admin can add members");
       }
 
       if (!user || (!user.fullName && !user.id)) {
@@ -129,8 +129,8 @@ export function createHouseService(store, logActivity, persistence) {
     async updateMember({ houseId, actorUserId, memberUserId, patch }) {
       assertHouseMember(houseId, actorUserId);
       const actor = store.houseMembers.get(`${houseId}:${actorUserId}`);
-      if (!hasManagementRole(actor)) {
-        throw new ApiError(403, "Only an admin or manager can update members");
+      if (!isAdmin(actor)) {
+        throw new ApiError(403, "Only the admin can update members");
       }
 
       const key = `${houseId}:${memberUserId}`;
@@ -162,8 +162,8 @@ export function createHouseService(store, logActivity, persistence) {
     async createInvitation({ houseId, actorUserId, contact, role = "flatmate" }) {
       assertHouseMember(houseId, actorUserId);
       const actor = store.houseMembers.get(`${houseId}:${actorUserId}`);
-      if (!hasManagementRole(actor)) {
-        throw new ApiError(403, "Only an admin or manager can invite members");
+      if (!isAdmin(actor)) {
+        throw new ApiError(403, "Only the admin can invite members");
       }
 
       const invitationId = createId();

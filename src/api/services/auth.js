@@ -128,6 +128,29 @@ export function createAuthService(store, persistence) {
       };
     },
 
+    async changePassword({ userId, currentPassword, newPassword }) {
+      const user = store.users.get(userId);
+      if (!user || !verifyPassword(currentPassword, user)) {
+        throw new ApiError(401, "Current password is incorrect");
+      }
+      if (!newPassword || typeof newPassword !== "string" || newPassword.length < 6) {
+        throw new ApiError(400, "New password must be at least 6 characters");
+      }
+
+      const passwordRecord = hashPassword(newPassword);
+      const updated = {
+        ...user,
+        passwordHash: passwordRecord.hash,
+        passwordSalt: passwordRecord.salt,
+        passwordAlgorithm: passwordRecord.algorithm,
+        updatedAt: new Date().toISOString(),
+      };
+      store.users.set(updated.id, updated);
+      if (updated.contact) store.usersByContact.set(updated.contact, updated);
+      await persistence.saveUser(updated);
+      return { user: sanitizeUser(updated) };
+    },
+
     async requestOtp({ contact, fullName = null }) {
       const normalized = normalizeContact(contact);
       if (authMode() === "supabase" && hasSupabaseAuthEnv()) {
