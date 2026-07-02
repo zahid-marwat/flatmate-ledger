@@ -228,7 +228,6 @@ insert into public.house_members (
 )
 values
   ('aaaaaaaa-0001-aaaa-0001-aaaaaaaa0001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '11111111-1111-1111-1111-111111111111', 'manager', 'active', now(), null, null, 'asfandyar', true),
-  ('aaaaaaaa-0002-aaaa-0002-aaaaaaaa0002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-222222222222', 'admin', 'active', now(), null, null, 'zahid-admin', false),
   ('aaaaaaaa-0003-aaaa-0003-aaaaaaaa0003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '99999999-9999-9999-9999-999999999999', 'flatmate', 'active', now(), null, null, 'zahid', false),
   ('aaaaaaaa-0004-aaaa-0004-aaaaaaaa0004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '33333333-3333-3333-3333-333333333333', 'flatmate', 'active', now(), null, null, 'muavia', false),
   ('aaaaaaaa-0005-aaaa-0005-aaaaaaaa0005', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '44444444-4444-4444-4444-444444444444', 'flatmate', 'active', now(), null, null, 'saad', false),
@@ -241,6 +240,11 @@ on conflict (house_id, user_id) do update set
   status = excluded.status,
   phone_display = excluded.phone_display,
   is_default_payer = excluded.is_default_payer;
+
+delete from public.house_members
+where user_id in (
+  select id from public.users where contact = 'zahid-admin'
+);
 
 insert into public.categories (id, house_id, name, icon, color, is_system, created_at)
 values

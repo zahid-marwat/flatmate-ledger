@@ -85,19 +85,6 @@
           </button>
         </nav>
 
-        <section id="adminHousePanel" class="panel">
-          <h2>Group</h2>
-          <form id="houseForm" class="stack">
-            <input name="name" placeholder="Group name" />
-            <input name="city" placeholder="City" />
-            <input name="address" placeholder="Address" />
-            <button type="submit">Create Group</button>
-          </form>
-          <label class="select-label">
-            <span>Active group</span>
-            <select id="houseSelect"></select>
-          </label>
-        </section>
       </aside>
 
       <section class="content">
@@ -137,8 +124,25 @@
           </div>
         </header>
 
-        <section id="dashboardView" class="grid">
-          <article class="panel wide">
+        <section id="adminHousePanel" class="panel app-page" data-page="groups" hidden>
+          <div class="panel-head">
+            <h3>Groups</h3>
+            <span>Admin-only group creation and active group selection</span>
+          </div>
+          <form id="houseForm" class="stack compact">
+            <input name="name" placeholder="Group name" />
+            <input name="city" placeholder="City" />
+            <input name="address" placeholder="Address" />
+            <button type="submit">Create Group</button>
+          </form>
+          <label class="select-label subtle-space">
+            <span>Active group</span>
+            <select id="houseSelect"></select>
+          </label>
+        </section>
+
+        <section id="dashboardView" class="grid app-page" data-page="dashboard">
+          <article class="panel wide" data-page-panel="dashboard">
             <div class="panel-head">
               <h3>Group Dashboard</h3>
               <span>Visible to admin, manager, and flatmates</span>
@@ -146,7 +150,7 @@
             <div id="dashboardSummaryCards" class="summary-grid"></div>
           </article>
 
-          <article class="panel">
+          <article class="panel" data-page-panel="members">
             <div class="panel-head">
               <h3>Members</h3>
               <span>Avatar roster</span>
@@ -154,7 +158,7 @@
             <div id="dashboardRoster" class="avatar-grid"></div>
           </article>
 
-          <article class="panel">
+          <article class="panel" data-page-panel="history">
             <div class="panel-head">
               <h3>History</h3>
               <span id="historyCount">0 events</span>
@@ -163,7 +167,7 @@
           </article>
         </section>
 
-        <section id="settingsView" class="panel settings-panel">
+        <section id="settingsView" class="panel settings-panel app-page" data-page="settings" hidden>
           <div class="panel-head">
             <div>
               <h3>Settings</h3>
@@ -267,8 +271,8 @@
           </div>
         </section>
 
-        <section id="adminView" class="grid">
-          <article id="adminMemberPanel" class="panel wide">
+        <section id="adminView" class="grid app-page-group">
+          <article id="adminMemberPanel" class="panel wide app-page" data-page="members" hidden>
             <div class="panel-head">
               <h3>Add Member Account</h3>
               <span id="memberCount">0</span>
@@ -285,7 +289,6 @@
               <select name="role">
                 <option value="flatmate">Flatmate</option>
                 <option value="manager">Manager</option>
-                <option value="admin">Admin</option>
                 <option value="viewer">Viewer</option>
               </select>
               <button type="submit">Create and Add Member</button>
@@ -295,14 +298,13 @@
               <select name="role">
                 <option value="manager">Manager</option>
                 <option value="flatmate">Flatmate</option>
-                <option value="admin">Admin</option>
                 <option value="viewer">Viewer</option>
               </select>
               <button type="submit">Assign Role</button>
             </form>
           </article>
 
-          <article class="panel">
+          <article class="panel app-page" data-page="expense" hidden>
             <div class="panel-head">
               <h3>Expense</h3>
               <span>Approval flow ready</span>
@@ -341,7 +343,7 @@
             </form>
           </article>
 
-          <article id="adminEditExpensePanel" class="panel">
+          <article id="adminEditExpensePanel" class="panel app-page" data-page="expense" hidden>
             <div class="panel-head">
               <h3>Edit Submitted Expense</h3>
               <span>Admin only</span>
@@ -372,7 +374,7 @@
             </form>
           </article>
 
-          <article class="panel">
+          <article class="panel app-page" data-page="payment" hidden>
             <div class="panel-head">
               <h3>Cash Deposit</h3>
               <span>Manager approval required for users</span>
@@ -389,7 +391,7 @@
             </form>
           </article>
 
-          <article class="panel">
+          <article class="panel app-page" data-page="disputes" hidden>
             <div class="panel-head">
               <h3>Disputes</h3>
               <span>Open issue tracking</span>
@@ -402,7 +404,7 @@
             <div id="disputeList" class="ledger subtle-space"></div>
           </article>
 
-          <article class="panel">
+          <article class="panel app-page" data-page="settlement" hidden>
             <div class="panel-head">
               <h3>Settlement</h3>
               <span>Month-end closeout</span>
@@ -415,8 +417,8 @@
           </article>
         </section>
 
-        <section id="userView" class="grid" hidden>
-          <article class="panel wide">
+        <section id="userView" class="grid app-page-group" hidden>
+          <article class="panel wide app-page" data-page="dashboard">
             <div class="panel-head">
               <h3>My Group</h3>
               <span id="userHouseName">No house selected</span>
@@ -424,7 +426,7 @@
             <div id="userSummaryCards" class="summary-grid"></div>
           </article>
 
-          <article class="panel wide">
+          <article class="panel wide app-page" data-page="disputes" hidden>
             <div class="panel-head">
               <h3>Raise Dispute</h3>
               <span>For a specific expense</span>
@@ -436,7 +438,7 @@
             </form>
           </article>
 
-          <article class="panel wide">
+          <article class="panel wide app-page" data-page="dashboard">
             <div class="panel-head">
               <h3>My Balance</h3>
               <span id="userBalanceLabel">0 open balances</span>
@@ -444,7 +446,7 @@
             <div id="userBalanceList" class="ledger"></div>
           </article>
 
-          <article class="panel wide">
+          <article class="panel wide app-page" data-page="expense" hidden>
             <div class="panel-head">
               <h3>Submit Expense</h3>
               <span>Manager approval required</span>
@@ -466,7 +468,7 @@
             </form>
           </article>
 
-          <article class="panel wide">
+          <article class="panel wide app-page" data-page="payment" hidden>
             <div class="panel-head">
               <h3>Submit Cash Deposit</h3>
               <span>Manager approval required</span>
@@ -480,8 +482,8 @@
           </article>
         </section>
 
-        <section class="grid">
-          <article class="panel wide">
+        <section class="grid app-page-group">
+          <article class="panel wide app-page" data-page="dashboard">
             <div class="panel-head">
               <h3>Balances</h3>
               <span id="balanceCount">0 open balances</span>
@@ -489,7 +491,7 @@
             <div id="balanceList" class="ledger"></div>
           </article>
 
-          <article class="panel wide">
+          <article class="panel wide app-page" data-page="expense" hidden>
             <div class="panel-head">
               <h3>Expenses</h3>
               <span id="expenseCount">0 total</span>
@@ -497,7 +499,7 @@
             <div id="expenseList" class="ledger"></div>
           </article>
 
-          <article class="panel wide">
+          <article class="panel wide app-page" data-page="payment" hidden>
             <div class="panel-head">
               <h3>Payments</h3>
               <span id="paymentCount">0 total</span>

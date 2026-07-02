@@ -2,11 +2,24 @@ import { ApiError } from "../errors.js";
 import { createId } from "../id.js";
 
 function hasManagementRole(store, houseId, userId) {
+  if (isGlobalAdmin(store, userId)) return true;
   const member = store.houseMembers.get(`${houseId}:${userId}`);
   return ["admin", "manager"].includes(member?.role) && member.status === "active";
 }
 
+function isGlobalAdmin(store, userId) {
+  const user = store.users.get(userId);
+  const adminContacts = String(process.env.GLOBAL_ADMIN_CONTACTS || "zahid-admin")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  return Boolean(user?.contact && adminContacts.includes(String(user.contact).toLowerCase()));
+}
+
 function assertHouseMember(store, houseId, userId) {
+  if (isGlobalAdmin(store, userId) && store.houses.has(houseId)) {
+    return { userId, role: "admin", status: "active", isGlobalAdmin: true };
+  }
   const member = store.houseMembers.get(`${houseId}:${userId}`);
   if (!member || member.status !== "active") {
     throw new ApiError(403, "House membership required");
@@ -24,6 +37,9 @@ export function createPaymentService(store, logActivity, expenseService, persist
         throw new ApiError(400, "amountMinor must be a positive integer");
       }
 
+      if (isGlobalAdmin(store, payload.payerUserId) || isGlobalAdmin(store, payload.receiverUserId)) {
+        throw new ApiError(400, "Global admin cannot be selected as a payment member");
+      }
       assertHouseMember(store, houseId, payload.payerUserId);
       if (!payload.receiverUserId) {
         throw new ApiError(400, "receiverUserId is required");

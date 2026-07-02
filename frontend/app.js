@@ -7,6 +7,8 @@ const state = {
   members: [],
   currentHouse: null,
   sidebarCollapsed: localStorage.getItem("flatmateLedgerSidebarCollapsed") === "true",
+  currentPage: localStorage.getItem("flatmateLedgerPage") || "dashboard",
+  isGlobalAdmin: false,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -132,6 +134,12 @@ function isAdmin() {
   return state.role === "admin";
 }
 
+function isPageAllowed(pageKey) {
+  if (pageKey === "groups") return isAdmin();
+  if (pageKey === "settlement") return isManagement();
+  return true;
+}
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -213,6 +221,35 @@ function showSettingsPage(pageKey = "profile") {
   });
 }
 
+function canShowPageElement(element) {
+  if (element.id === "adminHousePanel") return isAdmin();
+  if (element.id === "adminMemberPanel" || element.id === "adminEditExpensePanel") return isAdmin();
+  if (element.closest("#adminView")) return isManagement();
+  if (element.closest("#userView")) return !isManagement();
+  return true;
+}
+
+function showAppPage(pageKey = state.currentPage || "dashboard") {
+  const nextPage = isPageAllowed(pageKey) ? pageKey : "dashboard";
+  state.currentPage = nextPage;
+  localStorage.setItem("flatmateLedgerPage", nextPage);
+
+  document.querySelectorAll(".app-page").forEach((page) => {
+    const pageName = page.getAttribute("data-page");
+    const isDashboardSubPage = page.id === "dashboardView" && ["dashboard", "members", "history"].includes(nextPage);
+    page.hidden = !(canShowPageElement(page) && (pageName === nextPage || isDashboardSubPage));
+  });
+
+  document.querySelectorAll("#dashboardView [data-page-panel]").forEach((panel) => {
+    const panelName = panel.getAttribute("data-page-panel");
+    panel.hidden = nextPage !== "dashboard" && panelName !== nextPage;
+  });
+
+  document.querySelectorAll(".menu-item").forEach((item) => {
+    item.classList.toggle("is-active", item.getAttribute("data-jump") === nextPage);
+  });
+}
+
 function setAppMode() {
   const signedIn = Boolean(state.token && state.user);
   els.loginView.hidden = signedIn;
@@ -221,10 +258,7 @@ function setAppMode() {
 
   const canManage = isManagement();
   els.adminView.hidden = !canManage;
-  els.adminHousePanel.hidden = !isAdmin();
   if (els.groupsMenuItem) els.groupsMenuItem.hidden = !isAdmin();
-  if (els.adminMemberPanel) els.adminMemberPanel.hidden = !isAdmin();
-  if (els.adminEditExpensePanel) els.adminEditExpensePanel.hidden = !isAdmin();
   if (els.adminQuickActions) els.adminQuickActions.hidden = !canManage;
   els.userView.hidden = canManage;
   if (els.workspaceTitle) els.workspaceTitle.textContent = canManage ? "Group Console" : "My Ledger";
@@ -236,6 +270,7 @@ function setAppMode() {
   els.signedInRole.textContent = state.role || "No house role";
   if (els.menuGroupCount) els.menuGroupCount.textContent = String(state.memberships.length || 0);
   populateSettings();
+  showAppPage(state.currentPage);
 }
 
 function renderSummary(summary) {
@@ -333,6 +368,8 @@ function renderMemberControls(members = []) {
   const currentUserOption = activeMembers.find((member) => (member.userId || member.user_id) === state.user?.id);
   if (currentUserOption) {
     els.managerPaidByUserId.value = state.user.id;
+  } else if (activeMembers[0]) {
+    els.managerPaidByUserId.value = activeMembers[0].userId || activeMembers[0].user_id;
   }
 
   const groupOptions = state.memberships.map((membership) => {
@@ -345,8 +382,8 @@ function renderMemberControls(members = []) {
   els.paymentPayerUserId.innerHTML = options;
   els.userPaymentPayerUserId.innerHTML = options;
   els.roleMemberUserId.innerHTML = options;
-  els.paymentPayerUserId.value = state.user?.id || "";
-  els.userPaymentPayerUserId.value = state.user?.id || "";
+  els.paymentPayerUserId.value = currentUserOption ? state.user.id : activeMembers[0]?.userId || activeMembers[0]?.user_id || "";
+  els.userPaymentPayerUserId.value = currentUserOption ? state.user.id : activeMembers[0]?.userId || activeMembers[0]?.user_id || "";
 }
 
 function renderDashboardRoster(members = []) {
@@ -527,8 +564,12 @@ async function hydrateSession() {
   const me = await api("/me");
   state.user = me.user;
   state.memberships = me.memberships || [];
+  state.isGlobalAdmin = Boolean(me.isGlobalAdmin);
   const membership = currentMembership();
-  state.role = membership?.role || null;
+  state.role = me.role || membership?.role || null;
+  if (!membership && state.role === "admin") {
+    state.currentPage = "groups";
+  }
   setHouseId(membership ? membership.houseId || membership.house_id : "");
   setAppMode();
   await refreshHouse();
@@ -862,6 +903,8 @@ els.logoutBtn.addEventListener("click", () => {
   state.memberships = [];
   state.members = [];
   state.currentHouse = null;
+  state.isGlobalAdmin = false;
+  state.currentPage = "dashboard";
   setAppMode();
 });
 
@@ -871,7 +914,7 @@ els.sidebarDisplayBtn?.addEventListener("click", () => {
 
 els.menuToggle?.addEventListener("click", () => {
   showSettingsPage("profile");
-  els.settingsView?.scrollIntoView({ behavior: "smooth", block: "start" });
+  showAppPage("settings");
 });
 
 els.houseSelect.addEventListener("change", async () => {
@@ -882,21 +925,7 @@ els.houseSelect.addEventListener("change", async () => {
 document.querySelectorAll("[data-jump]").forEach((button) => {
   button.addEventListener("click", () => {
     const key = button.getAttribute("data-jump");
-    const targetMap = {
-      dashboard: "dashboardView",
-      groups: "adminHousePanel",
-      members: "dashboardRoster",
-      member: "memberForm",
-      expense: isManagement() ? "expenseForm" : "userExpenseForm",
-      payment: isManagement() ? "paymentForm" : "userPaymentForm",
-      disputes: isManagement() ? "disputeForm" : "userDisputeForm",
-      settlement: "settlementList",
-      history: "historyList",
-      settings: "settingsView",
-    };
-    document.getElementById(targetMap[key] || "dashboardView")?.scrollIntoView({ behavior: "smooth", block: "center" });
-    document.querySelectorAll(".menu-item").forEach((item) => item.classList.remove("is-active"));
-    button.classList.add("is-active");
+    showAppPage(key);
   });
 });
 

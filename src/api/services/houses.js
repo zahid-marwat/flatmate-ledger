@@ -6,7 +6,19 @@ function isAdmin(member) {
 }
 
 export function createHouseService(store, logActivity, persistence) {
+  function isGlobalAdminUserId(userId) {
+    const user = store.users.get(userId);
+    const adminContacts = String(process.env.GLOBAL_ADMIN_CONTACTS || "zahid-admin")
+      .split(",")
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
+    return user?.contact && adminContacts.includes(String(user.contact).toLowerCase());
+  }
+
   function assertHouseMember(houseId, userId) {
+    if (isGlobalAdminUserId(userId)) {
+      return { userId, role: "admin", status: "active", isGlobalAdmin: true };
+    }
     const member = store.houseMembers.get(`${houseId}:${userId}`);
     if (!member || member.status !== "active") {
       throw new ApiError(403, "House membership required");
@@ -15,7 +27,7 @@ export function createHouseService(store, logActivity, persistence) {
   }
 
   return {
-    async createHouse({ creatorUserId, name, address = null, city = null, baseCurrency = "PKR", timezone = "Asia/Karachi", creatorRole = "manager" }) {
+    async createHouse({ creatorUserId, name, address = null, city = null, baseCurrency = "PKR", timezone = "Asia/Karachi", creatorRole = "manager", createCreatorMembership = true }) {
       if (!name) throw new ApiError(400, "House name is required");
 
       const houseId = createId();
@@ -37,23 +49,28 @@ export function createHouseService(store, logActivity, persistence) {
       store.houses.set(houseId, house);
       await persistence.saveHouse(house);
 
-      const member = {
-        id: createId(),
-        houseId,
-        userId: creatorUserId,
-        role: creatorRole,
-        status: "active",
-        joinedAt: new Date().toISOString(),
-        leftAt: null,
-        roomName: null,
-        phoneDisplay: null,
-        isDefaultPayer: true,
-      };
-      store.houseMembers.set(`${houseId}:${creatorUserId}`, member);
-      await persistence.saveHouseMember(member);
+      let member = null;
+      if (createCreatorMembership) {
+        member = {
+          id: createId(),
+          houseId,
+          userId: creatorUserId,
+          role: creatorRole,
+          status: "active",
+          joinedAt: new Date().toISOString(),
+          leftAt: null,
+          roomName: null,
+          phoneDisplay: null,
+          isDefaultPayer: true,
+        };
+        store.houseMembers.set(`${houseId}:${creatorUserId}`, member);
+        await persistence.saveHouseMember(member);
+      }
 
       logActivity(houseId, creatorUserId, "house.created", "house", houseId, { name });
-      logActivity(houseId, creatorUserId, "house.member_added", "house_member", member.id, { role: creatorRole });
+      if (member) {
+        logActivity(houseId, creatorUserId, "house.member_added", "house_member", member.id, { role: creatorRole });
+      }
 
       return { house, member };
     },
@@ -63,13 +80,13 @@ export function createHouseService(store, logActivity, persistence) {
     },
 
     listMembers(houseId) {
-      return [...store.houseMembers.values()].filter((member) => member.houseId === houseId);
+      return [...store.houseMembers.values()].filter((member) => member.houseId === houseId && !isGlobalAdminUserId(member.userId));
     },
 
-    async addMember({ houseId, actorUserId, user, role = "flatmate" }) {
+    async addMember({ houseId, actorUserId, user, role = "flatmate", actorIsGlobalAdmin = false }) {
       assertHouseMember(houseId, actorUserId);
       const actor = store.houseMembers.get(`${houseId}:${actorUserId}`);
-      if (!isAdmin(actor)) {
+      if (!actorIsGlobalAdmin && !isAdmin(actor)) {
         throw new ApiError(403, "Only the admin can add members");
       }
 
@@ -126,10 +143,10 @@ export function createHouseService(store, logActivity, persistence) {
       return { member, user: memberUser };
     },
 
-    async updateMember({ houseId, actorUserId, memberUserId, patch }) {
+    async updateMember({ houseId, actorUserId, memberUserId, patch, actorIsGlobalAdmin = false }) {
       assertHouseMember(houseId, actorUserId);
       const actor = store.houseMembers.get(`${houseId}:${actorUserId}`);
-      if (!isAdmin(actor)) {
+      if (!actorIsGlobalAdmin && !isAdmin(actor)) {
         throw new ApiError(403, "Only the admin can update members");
       }
 

@@ -64,7 +64,22 @@ function ensureUser(request) {
   return user;
 }
 
+function isGlobalAdmin(user) {
+  const adminContacts = String(process.env.GLOBAL_ADMIN_CONTACTS || "zahid-admin")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  return Boolean(user?.contact && adminContacts.includes(String(user.contact).toLowerCase()));
+}
+
+function isGlobalAdminUserId(userId) {
+  return isGlobalAdmin(store.users.get(userId));
+}
+
 function ensureHouseAccess(houseId, userId) {
+  if (isGlobalAdminUserId(userId) && store.houses.has(houseId)) {
+    return { userId, role: "admin", status: "active", isGlobalAdmin: true };
+  }
   const member = store.houseMembers.get(`${houseId}:${userId}`);
   if (!member || member.status !== "active") {
     throw new ApiError(403, "House membership required");
@@ -81,6 +96,7 @@ function isAdminRole(role) {
 }
 
 function getHouseRole(houseId, userId) {
+  if (isGlobalAdminUserId(userId) && store.houses.has(houseId)) return "admin";
   return store.houseMembers.get(`${houseId}:${userId}`)?.role || null;
 }
 
@@ -166,7 +182,7 @@ async function handleCreatePasswordUser(request) {
   const isSetupKeyValid = configuredSetupKey && body.setupKey === configuredSetupKey;
   if (actor) {
     const houseId = requireString(body.houseId, "houseId");
-    if (!isAdminRole(getHouseRole(houseId, actor.id))) {
+    if (!isGlobalAdmin(actor) && !isAdminRole(getHouseRole(houseId, actor.id))) {
       throw new ApiError(403, "Only the admin can create member accounts");
     }
   } else if (!isSetupKeyValid) {
@@ -174,6 +190,9 @@ async function handleCreatePasswordUser(request) {
   }
 
   const role = requireOneOf(body.role || "flatmate", "role", ["admin", "manager", "flatmate", "viewer"]);
+  if (actor && role === "admin") {
+    throw new ApiError(400, "Admin is a global account and cannot be added to a group");
+  }
   const result = await authService.createPasswordUser({
     contact: requireString(body.contact, "contact"),
     fullName: requireString(body.fullName, "fullName"),
@@ -192,8 +211,9 @@ async function handleCreatePasswordUser(request) {
         avatarUrl: optionalString(body.avatarUrl),
       },
       role,
+      actorIsGlobalAdmin: isGlobalAdmin(actor),
     });
-  } else if (isManagementRole(role)) {
+  } else if (role !== "admin" && isManagementRole(role)) {
     const hasManagerMembership = [...store.houseMembers.values()].some(
       (member) => member.userId === result.user.id && isManagementRole(member.role) && member.status === "active",
     );
@@ -263,21 +283,32 @@ async function handleUpdateProfile(request) {
 
 function handleMe(request) {
   const user = ensureUser(request);
-  const memberships = [...store.houseMembers.values()]
-    .filter((member) => member.userId === user.id && member.status === "active")
-    .map((member) => ({
-      ...member,
-      house: store.houses.get(member.houseId) || null,
-    }));
+  const globalAdmin = isGlobalAdmin(user);
+  const memberships = globalAdmin
+    ? [...store.houses.values()].map((house) => ({
+        id: `global-admin:${house.id}`,
+        houseId: house.id,
+        userId: user.id,
+        role: "admin",
+        status: "active",
+        isGlobalAdmin: true,
+        house,
+      }))
+    : [...store.houseMembers.values()]
+        .filter((member) => member.userId === user.id && member.status === "active")
+        .map((member) => ({
+          ...member,
+          house: store.houses.get(member.houseId) || null,
+        }));
 
-  return jsonResponse({ user, memberships });
+  return jsonResponse({ user, memberships, role: globalAdmin ? "admin" : memberships[0]?.role || null, isGlobalAdmin: globalAdmin });
 }
 
 async function handleCreateHouse(request) {
   const user = ensureUser(request);
   const canCreateGroup = [...store.houseMembers.values()].some(
     (member) => member.userId === user.id && member.status === "active" && member.role === "admin",
-  );
+  ) || isGlobalAdmin(user);
   if (!canCreateGroup) {
     throw new ApiError(403, "Only the admin can create groups");
   }
@@ -290,6 +321,7 @@ async function handleCreateHouse(request) {
     baseCurrency: requireString(body.baseCurrency || "PKR", "baseCurrency"),
     timezone: requireString(body.timezone || "Asia/Karachi", "timezone"),
     creatorRole: getPrimaryManagementRole(user.id),
+    createCreatorMembership: !isGlobalAdmin(user),
   }), 201);
 }
 
@@ -327,7 +359,8 @@ async function handleAddMember(request, params) {
       locale: optionalString(body.user?.locale) || "en-PK",
       avatarUrl: optionalString(body.user?.avatarUrl),
     },
-    role: requireOneOf(body.role || "flatmate", "role", ["flatmate", "manager", "admin", "viewer"]),
+    role: requireOneOf(body.role || "flatmate", "role", ["flatmate", "manager", "viewer"]),
+    actorIsGlobalAdmin: isGlobalAdmin(user),
   }), 201);
 }
 
@@ -339,8 +372,9 @@ async function handleUpdateMember(request, params) {
     actorUserId: user.id,
     memberUserId: params.userId,
     patch: {
-      role: requireOneOf(body.role, "role", ["flatmate", "manager", "admin", "viewer"]),
+      role: requireOneOf(body.role, "role", ["flatmate", "manager", "viewer"]),
     },
+    actorIsGlobalAdmin: isGlobalAdmin(user),
   }));
 }
 
@@ -351,7 +385,7 @@ async function handleCreateInvitation(request, params) {
     houseId: params.id,
     actorUserId: user.id,
     contact: requireString(body.contact, "contact"),
-    role: requireOneOf(body.role || "flatmate", "role", ["flatmate", "manager", "admin", "viewer"]),
+    role: requireOneOf(body.role || "flatmate", "role", ["flatmate", "manager", "viewer"]),
   }), 201);
 }
 
