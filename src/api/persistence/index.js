@@ -233,7 +233,12 @@ export function createPersistence(store) {
         createdAt: invitation.created_at,
       });
     }
-    for (const dispute of rows(disputes).map(mapDispute)) store.disputes.set(dispute.id, dispute);
+    for (const dispute of rows(disputes).map(mapDispute)) {
+      if (!dispute.houseId) {
+        dispute.houseId = store.expenses.get(dispute.expenseId)?.houseId || null;
+      }
+      store.disputes.set(dispute.id, dispute);
+    }
     for (const settlement of rows(settlements).map(mapSettlement)) store.settlements.set(settlement.id, settlement);
     for (const line of rows(settlementLines).map(mapSettlementLine)) {
       const current = store.settlementLines.get(line.settlementId) || [];
@@ -428,7 +433,7 @@ export function createPersistence(store) {
     },
     async saveDispute(dispute) {
       if (!client.enabled) return;
-      await client.upsert("disputes", [{
+      const result = await client.upsert("disputes", [{
         id: dispute.id,
         house_id: dispute.houseId,
         expense_id: dispute.expenseId,
@@ -440,6 +445,7 @@ export function createPersistence(store) {
         resolved_at: dispute.resolvedAt,
         created_at: dispute.createdAt,
       }]);
+      if (result.error) throw result.error;
     },
     async saveSettlement(settlement) {
       if (!client.enabled) return;

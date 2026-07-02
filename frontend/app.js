@@ -19,6 +19,12 @@ const els = {
   adminQuickActions: $("#adminQuickActions"),
   adminMemberPanel: $("#adminMemberPanel"),
   adminEditExpensePanel: $("#adminEditExpensePanel"),
+  menuGroupCount: $("#menuGroupCount"),
+  groupsMenuItem: $("#groupsMenuItem"),
+  menuMemberCount: $("#menuMemberCount"),
+  menuExpenseCount: $("#menuExpenseCount"),
+  menuPaymentCount: $("#menuPaymentCount"),
+  menuHistoryCount: $("#menuHistoryCount"),
   topActiveGroup: $("#topActiveGroup"),
   workspaceTitle: $("#workspaceTitle"),
   viewEyebrow: $("#viewEyebrow"),
@@ -148,6 +154,7 @@ function setAppMode() {
   const canManage = isManagement();
   els.adminView.hidden = !canManage;
   els.adminHousePanel.hidden = !isAdmin();
+  if (els.groupsMenuItem) els.groupsMenuItem.hidden = !isAdmin();
   els.adminMemberPanel.hidden = !isAdmin();
   els.adminEditExpensePanel.hidden = !isAdmin();
   els.adminQuickActions.hidden = !canManage;
@@ -159,6 +166,7 @@ function setAppMode() {
     : "See your balance, group expenses, and payment status.";
   els.signedInUser.textContent = state.user.fullName || state.user.contact;
   els.signedInRole.textContent = state.role || "No house role";
+  if (els.menuGroupCount) els.menuGroupCount.textContent = String(state.memberships.length || 0);
 }
 
 function renderSummary(summary) {
@@ -197,6 +205,9 @@ function memberLabel(member) {
 
 function avatarMeta(member) {
   const avatar = member?.user?.avatarUrl || member?.user?.avatar_url || "";
+  if (avatar && (avatar.startsWith("/avatars/") || avatar.startsWith("http://") || avatar.startsWith("https://"))) {
+    return { imageUrl: avatar, label: `${memberLabel(member)} avatar`, className: "avatar-image" };
+  }
   const map = {
     "avatar:dog": { icon: "DOG", label: "Dog avatar", className: "avatar-dog" },
     "avatar:big-belly": { icon: "BB", label: "Big belly man", className: "avatar-belly" },
@@ -209,6 +220,9 @@ function avatarMeta(member) {
 
 function avatarMarkup(member) {
   const avatar = avatarMeta(member);
+  if (avatar.imageUrl) {
+    return `<span class="avatar ${avatar.className}" title="${avatar.label}"><img src="${avatar.imageUrl}" alt="${avatar.label}" /></span>`;
+  }
   return `<span class="avatar ${avatar.className}" title="${avatar.label}">${avatar.icon}</span>`;
 }
 
@@ -290,10 +304,12 @@ function renderMembers(members = []) {
   renderMemberControls(members);
   renderDashboardRoster(members);
   els.memberCount.textContent = String(members.length);
+  if (els.menuMemberCount) els.menuMemberCount.textContent = String(members.length);
 }
 
 function renderHistory(history = []) {
   els.historyCount.textContent = `${history.length} events`;
+  if (els.menuHistoryCount) els.menuHistoryCount.textContent = String(history.length);
   els.historyList.innerHTML = history.length
     ? history.slice(0, 12).map((entry) => {
         const actorName = entry.actor?.fullName || entry.actor?.contact || "System";
@@ -358,6 +374,7 @@ function selectedSplitMemberIds(form) {
 
 function renderExpenses(expenses = []) {
   els.expenseCount.textContent = `${expenses.length} total`;
+  if (els.menuExpenseCount) els.menuExpenseCount.textContent = String(expenses.length);
   els.expenseList.innerHTML = expenses.length
     ? expenses.map((expense) => `
       <div class="ledger-item">
@@ -383,6 +400,7 @@ function renderExpenses(expenses = []) {
 
 function renderPayments(payments = []) {
   els.paymentCount.textContent = `${payments.length} total`;
+  if (els.menuPaymentCount) els.menuPaymentCount.textContent = String(payments.length);
   els.paymentList.innerHTML = payments.length
     ? payments.map((payment) => `
       <div class="ledger-item">
@@ -405,7 +423,8 @@ function renderDisputes(disputes = []) {
         <div class="ledger-item-top">
           <div>
             <strong>${dispute.reason}</strong>
-            <div class="list-item-meta">${dispute.status} - ${dispute.expenseId}</div>
+            <div class="list-item-meta">${dispute.status} - ${dispute.expense?.title || "Expense"} - opened by ${dispute.openedByUser?.fullName || dispute.openedByUser?.contact || dispute.openedBy}</div>
+            <div class="list-item-meta">Expense ID: ${dispute.expenseId}</div>
           </div>
           <code>${dispute.id}</code>
         </div>
@@ -734,9 +753,20 @@ els.houseSelect.addEventListener("change", async () => {
 document.querySelectorAll("[data-jump]").forEach((button) => {
   button.addEventListener("click", () => {
     const key = button.getAttribute("data-jump");
-    document.getElementById(
-      key === "expense" ? "expenseForm" : key === "payment" ? "paymentForm" : "memberForm",
-    )?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const targetMap = {
+      dashboard: "dashboardView",
+      groups: "adminHousePanel",
+      members: "dashboardRoster",
+      member: "memberForm",
+      expense: isManagement() ? "expenseForm" : "userExpenseForm",
+      payment: isManagement() ? "paymentForm" : "userPaymentForm",
+      disputes: isManagement() ? "disputeForm" : "userDisputeForm",
+      settlement: "settlementList",
+      history: "historyList",
+    };
+    document.getElementById(targetMap[key] || "dashboardView")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    document.querySelectorAll(".menu-item").forEach((item) => item.classList.remove("is-active"));
+    button.classList.add("is-active");
   });
 });
 
@@ -790,8 +820,14 @@ hydrateSession().catch((error) => {
 document.querySelectorAll("[data-toggle-password]").forEach((button) => {
   button.addEventListener("click", () => {
     const input = button.parentElement.querySelector("input");
-    input.type = input.type === "password" ? "text" : "password";
-    button.textContent = input.type === "password" ? "Show" : "Hide";
+    const nextType = input.type === "password" ? "text" : "password";
+    input.type = nextType;
+    const icon = button.querySelector("img");
+    const isVisible = nextType === "text";
+    if (icon) {
+      icon.src = isVisible ? "/icons/eye%20off.png" : "/icons/eye%20on.png";
+    }
+    button.setAttribute("aria-label", isVisible ? "Hide password" : "Show password");
   });
 });
 

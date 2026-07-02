@@ -10,6 +10,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..", "..");
 const frontendRoot = path.join(projectRoot, "frontend");
+const avatarsRoot = path.join(projectRoot, "src", "avatars");
+const iconsRoot = path.join(projectRoot, "src", "icons");
 
 function guessContentType(filePath) {
   const ext = path.extname(filePath).toLowerCase();
@@ -19,6 +21,8 @@ function guessContentType(filePath) {
   if (ext === ".json") return "application/json; charset=utf-8";
   if (ext === ".svg") return "image/svg+xml";
   if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".webp") return "image/webp";
   return "application/octet-stream";
 }
 
@@ -35,10 +39,19 @@ async function serveStatic(req, res) {
     return false;
   }
 
+  const isAvatarRequest = url.pathname.startsWith("/avatars/");
+  const isIconRequest = url.pathname.startsWith("/icons/");
+  const staticRoot = isAvatarRequest ? avatarsRoot : isIconRequest ? iconsRoot : frontendRoot;
+  const rawRelativePath = isAvatarRequest
+    ? url.pathname.replace(/^\/avatars\/+/, "")
+    : isIconRequest
+      ? url.pathname.replace(/^\/icons\/+/, "")
+      : url.pathname.replace(/^\/+/, "");
+  const relativePath = decodeURIComponent(rawRelativePath);
   const targetPath =
-    url.pathname === "/" ? path.join(frontendRoot, "index.html") : path.join(frontendRoot, url.pathname.replace(/^\/+/, ""));
+    url.pathname === "/" ? path.join(frontendRoot, "index.html") : path.join(staticRoot, relativePath);
 
-  if (!targetPath.startsWith(frontendRoot)) {
+  if (!targetPath.startsWith(staticRoot)) {
     res.writeHead(403);
     res.end("Forbidden");
     return true;
@@ -50,6 +63,11 @@ async function serveStatic(req, res) {
     res.end(content);
     return true;
   } catch {
+    if (isAvatarRequest || isIconRequest) {
+      res.writeHead(404);
+      res.end(isAvatarRequest ? "Avatar not found" : "Icon not found");
+      return true;
+    }
     const fallback = path.join(frontendRoot, "index.html");
     try {
       const content = await readFile(fallback);

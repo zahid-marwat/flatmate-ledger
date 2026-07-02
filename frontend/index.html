@@ -11,36 +11,79 @@
   </head>
   <body>
     <main id="loginView" class="auth-shell">
+      <div class="circuit circuit-left-top"></div>
+      <div class="circuit circuit-left-bottom"></div>
+      <div class="circuit circuit-right-top"></div>
+      <div class="circuit circuit-right-bottom"></div>
       <section class="auth-panel">
-        <div class="brand">
-          <div class="brand-mark">FL</div>
-          <div>
-            <p class="eyebrow">Flatmate Ledger</p>
-            <h1>Shared flat finance</h1>
-          </div>
-        </div>
-
         <form id="loginForm" class="stack">
-          <h2>Login</h2>
-          <input name="contact" placeholder="Username" autocomplete="username" />
-          <label class="password-field">
-            <input name="password" type="password" placeholder="Password" autocomplete="current-password" />
-            <button type="button" data-toggle-password>Show</button>
+          <div class="login-orb" aria-hidden="true"></div>
+          <p class="login-kicker">Flatmate Ledger</p>
+          <h2>Welcome Back</h2>
+          <p class="login-subtitle">Enter your username and password</p>
+          <label class="login-field">
+            <span>◎</span>
+            <input name="contact" placeholder="Username" autocomplete="username" />
           </label>
-          <button type="submit">Enter Ledger</button>
+          <label class="password-field login-field">
+            <span>▣</span>
+            <input name="password" type="password" placeholder="Password" autocomplete="current-password" />
+            <button type="button" class="icon-button password-toggle" data-toggle-password aria-label="Show password">
+              <img src="/icons/eye%20on.png" alt="" />
+            </button>
+          </label>
+          <button class="login-submit" type="submit">Login</button>
         </form>
       </section>
     </main>
 
     <main id="appView" class="shell" hidden>
       <aside class="sidebar">
-        <div class="brand">
-          <div class="brand-mark">FL</div>
-          <div>
-            <p class="eyebrow">Flatmate Ledger</p>
-            <h1 id="workspaceTitle">Dashboard</h1>
+        <nav class="side-menu">
+          <div class="side-menu-head">
+            <strong>LEDGER<span>PRO</span></strong>
+            <button type="button" class="menu-toggle" aria-label="Settings">
+              <img src="/icons/settings.jpg" alt="" />
+            </button>
           </div>
-        </div>
+          <button type="button" class="menu-item is-active" data-jump="dashboard">
+            <span class="menu-icon">▦</span>
+            <span>Dashboard</span>
+          </button>
+          <button type="button" id="groupsMenuItem" class="menu-item" data-jump="groups">
+            <span class="menu-icon">◎</span>
+            <span>Groups</span>
+            <small id="menuGroupCount">0</small>
+          </button>
+          <button type="button" class="menu-item" data-jump="members">
+            <span class="menu-icon">♙</span>
+            <span>Members</span>
+            <small id="menuMemberCount">0</small>
+          </button>
+          <button type="button" class="menu-item" data-jump="expense">
+            <span class="menu-icon">✎</span>
+            <span>Expenses</span>
+            <small id="menuExpenseCount">0</small>
+          </button>
+          <button type="button" class="menu-item" data-jump="payment">
+            <span class="menu-icon">▤</span>
+            <span>Cash Deposits</span>
+            <small id="menuPaymentCount">0</small>
+          </button>
+          <button type="button" class="menu-item" data-jump="disputes">
+            <span class="menu-icon">◇</span>
+            <span>Disputes</span>
+          </button>
+          <button type="button" class="menu-item" data-jump="settlement">
+            <span class="menu-icon">⌁</span>
+            <span>Settlement</span>
+          </button>
+          <button type="button" class="menu-item" data-jump="history">
+            <span class="menu-icon">⚙</span>
+            <span>History</span>
+            <small id="menuHistoryCount">0</small>
+          </button>
+        </nav>
 
         <section id="adminHousePanel" class="panel">
           <h2>Group</h2>
@@ -54,15 +97,6 @@
             <span>Active group</span>
             <select id="houseSelect"></select>
           </label>
-        </section>
-
-        <section id="adminQuickActions" class="panel">
-          <h2>Quick Actions</h2>
-          <div class="actions">
-            <button data-jump="expense">New Expense</button>
-            <button data-jump="payment">New Payment</button>
-            <button data-jump="member">Add Member</button>
-          </div>
         </section>
       </aside>
 
@@ -153,7 +187,9 @@
               <input name="contact" placeholder="Username" />
               <label class="password-field">
                 <input name="password" type="password" placeholder="Initial password" />
-                <button type="button" data-toggle-password>Show</button>
+                <button type="button" class="icon-button password-toggle" data-toggle-password aria-label="Show password">
+                  <img src="/icons/eye%20on.png" alt="" />
+                </button>
               </label>
               <select name="role">
                 <option value="flatmate">Flatmate</option>

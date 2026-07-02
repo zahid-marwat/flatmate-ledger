@@ -470,9 +470,14 @@ async function handleRejectPayment(request, params) {
 
 async function handleCreateDispute(request, params) {
   const user = ensureUser(request);
+  ensureHouseAccess(params.id, user.id);
   const body = await readJson(request);
   const expenseId = requireString(body.expenseId, "expenseId");
   const reason = requireString(body.reason, "reason");
+  const expense = store.expenses.get(expenseId);
+  if (!expense || expense.houseId !== params.id) {
+    throw new ApiError(404, "Expense not found in this group");
+  }
   const disputeId = store.createId();
   const dispute = {
     id: disputeId,
@@ -487,7 +492,7 @@ async function handleCreateDispute(request, params) {
     createdAt: new Date().toISOString(),
   };
   store.disputes.set(disputeId, dispute);
-  void persistence.saveDispute(dispute);
+  await persistence.saveDispute(dispute);
   logActivity(params.id, user.id, "dispute.created", "dispute", disputeId, { expenseId, reason });
   return jsonResponse(dispute, 201);
 }
@@ -495,7 +500,18 @@ async function handleCreateDispute(request, params) {
 function handleListDisputes(request, params) {
   const user = ensureUser(request);
   ensureHouseAccess(params.id, user.id);
-  return jsonResponse({ disputes: [...store.disputes.values()].filter((item) => item.houseId === params.id) });
+  const disputes = [...store.disputes.values()]
+    .filter((item) => {
+      const expense = store.expenses.get(item.expenseId);
+      return item.houseId === params.id || expense?.houseId === params.id;
+    })
+    .map((item) => ({
+      ...item,
+      houseId: item.houseId || store.expenses.get(item.expenseId)?.houseId || null,
+      openedByUser: store.users.get(item.openedBy) || null,
+      expense: store.expenses.get(item.expenseId) || null,
+    }));
+  return jsonResponse({ disputes });
 }
 
 async function handleGenerateSettlement(request, params) {
