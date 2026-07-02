@@ -5,6 +5,10 @@ const state = {
   role: null,
   memberships: [],
   members: [],
+  expenses: [],
+  payments: [],
+  balances: [],
+  history: [],
   currentHouse: null,
   sidebarCollapsed: localStorage.getItem("flatmateLedgerSidebarCollapsed") === "true",
   currentPage: localStorage.getItem("flatmateLedgerPage") || "dashboard",
@@ -71,6 +75,11 @@ const els = {
   paymentPayerUserId: $("#paymentPayerUserId"),
   userPaymentGroupSelect: $("#userPaymentGroupSelect"),
   userPaymentPayerUserId: $("#userPaymentPayerUserId"),
+  editExpenseId: $("#editExpenseId"),
+  disputeExpenseId: $("#disputeExpenseId"),
+  userDisputeExpenseId: $("#userDisputeExpenseId"),
+  memberProfilePopover: $("#memberProfilePopover"),
+  historyPreviewPopover: $("#historyPreviewPopover"),
   roleMemberUserId: $("#roleMemberUserId"),
   generateSettlementBtn: $("#generateSettlementBtn"),
   refreshSettlementBtn: $("#refreshSettlementBtn"),
@@ -173,7 +182,7 @@ function setSidebarCollapsed(collapsed) {
   localStorage.setItem("flatmateLedgerSidebarCollapsed", String(state.sidebarCollapsed));
   els.appView?.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
   if (els.sidebarDisplayBtn) {
-    els.sidebarDisplayBtn.textContent = state.sidebarCollapsed ? "Show Sidebar Options" : "Hide Sidebar Options";
+    els.sidebarDisplayBtn.textContent = state.sidebarCollapsed ? "→ Show Sidebar Options" : "← Hide Sidebar Options";
   }
 }
 
@@ -330,6 +339,144 @@ function avatarMarkup(member) {
   return `<span class="avatar ${avatar.className}" title="${avatar.label}">${avatar.icon}</span>`;
 }
 
+function expenseLabel(expense) {
+  const date = expense.expenseDate || expense.expense_date || "";
+  return `${expense.title || "Expense"}${date ? ` - ${date}` : ""} - ${money(expense.amountMinor)}`;
+}
+
+function getMemberById(userId) {
+  return state.members.find((member) => (member.userId || member.user_id) === userId) || null;
+}
+
+function memberNameById(userId) {
+  return memberLabel(getMemberById(userId)) || "Member";
+}
+
+function populateExpenseSelectors(expenses = state.expenses) {
+  const options = expenses.length
+    ? expenses.map((expense) => `<option value="${expense.id}">${expenseLabel(expense)}</option>`).join("")
+    : `<option value="">No expenses available</option>`;
+  [els.editExpenseId, els.disputeExpenseId, els.userDisputeExpenseId].forEach((select) => {
+    if (select) select.innerHTML = options;
+  });
+}
+
+function memberFinanceSummary(userId) {
+  const paidExpenses = state.expenses.filter((expense) => {
+    if ((expense.paidByUserId || expense.paid_by_user_id) === userId) return true;
+    return (expense.payerContributions || []).some((entry) => entry.userId === userId);
+  });
+  const owedSplits = state.expenses.flatMap((expense) =>
+    (expense.splits || [])
+      .filter((split) => split.userId === userId)
+      .map((split) => ({ expense, amountMinor: split.owedAmountMinor })),
+  );
+  const balance = state.balances.find((entry) => entry.userId === userId)?.balanceMinor || 0;
+  const debtLines = state.balances
+    .filter((entry) => entry.userId !== userId && entry.balanceMinor > 0 && balance < 0)
+    .map((entry) => `Owes ${memberNameById(entry.userId)} up to ${money(Math.min(Math.abs(balance), entry.balanceMinor))}`);
+  const creditLines = state.balances
+    .filter((entry) => entry.userId !== userId && entry.balanceMinor < 0 && balance > 0)
+    .map((entry) => `${memberNameById(entry.userId)} owes up to ${money(Math.min(balance, Math.abs(entry.balanceMinor)))}`);
+
+  return { paidExpenses, owedSplits, balance, debtLines, creditLines };
+}
+
+function memberProfileHtml(member) {
+  const userId = member.userId || member.user_id;
+  const summary = memberFinanceSummary(userId);
+  const paidTotal = summary.paidExpenses.reduce((sum, expense) => {
+    const ownContribution = (expense.payerContributions || []).find((entry) => entry.userId === userId);
+    return sum + (ownContribution?.amountMinor || expense.amountMinor || 0);
+  }, 0);
+  const owedTotal = summary.owedSplits.reduce((sum, split) => sum + split.amountMinor, 0);
+  const avatar = avatarMeta(member);
+  const avatarImage = avatar.imageUrl
+    ? `<img src="${avatar.imageUrl}" alt="${avatar.label}" />`
+    : `<span class="member-profile-fallback ${avatar.className}">${avatar.icon}</span>`;
+
+  return `
+    <div class="member-profile-card">
+      <button type="button" class="member-profile-close" data-close-member-profile aria-label="Close">×</button>
+      <div class="member-profile-head">
+        <div class="member-profile-photo">${avatarImage}</div>
+        <div>
+          <strong>${memberLabel(member)}</strong>
+          <span>${member.role || "flatmate"}</span>
+        </div>
+      </div>
+      <div class="member-profile-stats">
+        <div><span>Paid</span><strong>${money(paidTotal)}</strong></div>
+        <div><span>Share</span><strong>${money(owedTotal)}</strong></div>
+        <div><span>Net</span><strong class="${summary.balance >= 0 ? "positive" : "negative"}">${money(summary.balance)}</strong></div>
+      </div>
+      <div class="member-profile-section">
+        <h4>Expenses Paid</h4>
+        ${summary.paidExpenses.length ? summary.paidExpenses.slice(0, 5).map((expense) => `<p>${expenseLabel(expense)}</p>`).join("") : "<p>No paid expenses yet.</p>"}
+      </div>
+      <div class="member-profile-section">
+        <h4>Debts & Credits</h4>
+        ${[...summary.debtLines, ...summary.creditLines].length ? [...summary.debtLines, ...summary.creditLines].map((line) => `<p>${line}</p>`).join("") : "<p>Settled for now.</p>"}
+      </div>
+    </div>
+  `;
+}
+
+function showMemberProfile(member, anchor = null, pinned = false) {
+  if (!els.memberProfilePopover || !member) return;
+  els.memberProfilePopover.innerHTML = memberProfileHtml(member);
+  els.memberProfilePopover.hidden = false;
+  els.memberProfilePopover.classList.toggle("is-pinned", pinned);
+  if (anchor) {
+    const rect = anchor.getBoundingClientRect();
+    const left = Math.min(window.innerWidth - 340, Math.max(12, rect.left));
+    const top = Math.min(window.innerHeight - 460, Math.max(12, rect.bottom + 10));
+    els.memberProfilePopover.style.left = `${left}px`;
+    els.memberProfilePopover.style.top = `${top}px`;
+  }
+}
+
+function hideMemberProfile({ force = false } = {}) {
+  if (!els.memberProfilePopover) return;
+  if (!force && els.memberProfilePopover.classList.contains("is-pinned")) return;
+  els.memberProfilePopover.hidden = true;
+  els.memberProfilePopover.classList.remove("is-pinned");
+}
+
+function historyPreviewHtml(entry) {
+  if (!entry) return "";
+  const actorName = entry.actor?.fullName || entry.actor?.contact || "System";
+  const timestamp = entry.createdAt ? new Date(entry.createdAt).toLocaleString("en-PK") : "Unknown";
+  const metadata = entry.metadata && Object.keys(entry.metadata).length
+    ? Object.entries(entry.metadata).slice(0, 4).map(([key, value]) => `
+      <div><span>${key}</span><strong>${typeof value === "object" ? JSON.stringify(value) : value}</strong></div>
+    `).join("")
+    : `<div><span>Details</span><strong>No extra details</strong></div>`;
+
+  return `
+    <div class="history-preview-card">
+      <strong>${entry.actionType || "activity"}</strong>
+      <p>${actorName} - ${timestamp}</p>
+      ${metadata}
+    </div>
+  `;
+}
+
+function showHistoryPreview(entry, anchor) {
+  if (!els.historyPreviewPopover || !entry || !anchor) return;
+  els.historyPreviewPopover.innerHTML = historyPreviewHtml(entry);
+  els.historyPreviewPopover.hidden = false;
+  const rect = anchor.getBoundingClientRect();
+  const left = Math.min(window.innerWidth - 340, Math.max(12, rect.right - 320));
+  const top = Math.min(window.innerHeight - 260, Math.max(12, rect.bottom + 8));
+  els.historyPreviewPopover.style.left = `${left}px`;
+  els.historyPreviewPopover.style.top = `${top}px`;
+}
+
+function hideHistoryPreview() {
+  if (els.historyPreviewPopover) els.historyPreviewPopover.hidden = true;
+}
+
 function resolveUserId(value) {
   const normalized = String(value || "").trim().toLowerCase();
   if (!normalized) return "";
@@ -394,13 +541,13 @@ function renderDashboardRoster(members = []) {
     .sort((left, right) => balanceFor(left) - balanceFor(right));
   els.dashboardRoster.innerHTML = activeMembers.length
     ? activeMembers.map((member) => `
-      <div class="avatar-card" data-tooltip="ID: ${member.userId || member.user_id} | Groups: ${state.memberships.length} | Balance: ${money(balanceFor(member))}">
+      <button type="button" class="avatar-card" data-member-profile="${member.userId || member.user_id}" aria-label="View ${memberLabel(member)} profile">
         ${avatarMarkup(member)}
         <div>
           <strong>${memberLabel(member)}</strong>
           <span>${member.role} - ${money(balanceFor(member))}</span>
         </div>
-      </div>
+      </button>
     `).join("")
     : `<div class="list-item">No flatmates yet.</div>`;
 }
@@ -414,22 +561,38 @@ function renderMembers(members = []) {
 }
 
 function renderHistory(history = []) {
+  state.history = history;
   els.historyCount.textContent = `${history.length} events`;
   if (els.menuHistoryCount) els.menuHistoryCount.textContent = String(history.length);
   els.historyList.innerHTML = history.length
-    ? history.slice(0, 12).map((entry) => {
+    ? history.map((entry, index) => {
         const actorName = entry.actor?.fullName || entry.actor?.contact || "System";
         const timestamp = entry.createdAt ? new Date(entry.createdAt).toLocaleString("en-PK") : "";
+        const metadata = entry.metadata && Object.keys(entry.metadata).length
+          ? Object.entries(entry.metadata).map(([key, value]) => `
+            <div class="history-detail-row">
+              <span>${key}</span>
+              <strong>${typeof value === "object" ? JSON.stringify(value) : value}</strong>
+            </div>
+          `).join("")
+          : `<div class="history-detail-row"><span>Details</span><strong>No extra details</strong></div>`;
         return `
-          <div class="ledger-item">
-            <div class="ledger-item-top">
+          <details class="ledger-item history-item" data-history-index="${index}">
+            <summary class="ledger-item-top">
               <div>
                 <strong>${entry.actionType || "activity"}</strong>
                 <div class="list-item-meta">${actorName} - ${timestamp}</div>
               </div>
-              <code>${entry.entityType || "event"}</code>
+              <span class="status-pill">${entry.entityType || "event"}</span>
+            </summary>
+            <div class="history-detail">
+              <div class="history-detail-row"><span>Actor</span><strong>${actorName}</strong></div>
+              <div class="history-detail-row"><span>Action</span><strong>${entry.actionType || "activity"}</strong></div>
+              <div class="history-detail-row"><span>Type</span><strong>${entry.entityType || "event"}</strong></div>
+              <div class="history-detail-row"><span>Time</span><strong>${timestamp || "Unknown"}</strong></div>
+              ${metadata}
             </div>
-          </div>
+          </details>
         `;
       }).join("")
     : `<div class="ledger-item">No history yet.</div>`;
@@ -441,7 +604,7 @@ function balanceItem(balance) {
     <div class="ledger-item">
       <div class="ledger-item-top">
         <div>
-          <strong>${memberLabel(member) || balance.userId}</strong>
+          <strong>${memberLabel(member) || "Member"}</strong>
           <div class="list-item-meta">Member balance</div>
         </div>
         <strong class="${balance.balanceMinor >= 0 ? "positive" : "negative"}">${money(balance.balanceMinor)}</strong>
@@ -451,6 +614,7 @@ function balanceItem(balance) {
 }
 
 function renderBalances(balances = []) {
+  state.balances = balances;
   els.balanceList.innerHTML = balances.length ? balances.map(balanceItem).join("") : `<div class="ledger-item">No open balances.</div>`;
   const mine = balances.filter((balance) => balance.userId === state.user?.id);
   els.userBalanceLabel.textContent = `${mine.length} personal balance entries`;
@@ -479,6 +643,8 @@ function selectedSplitMemberIds(form) {
 }
 
 function renderExpenses(expenses = []) {
+  state.expenses = expenses;
+  populateExpenseSelectors(expenses);
   els.expenseCount.textContent = `${expenses.length} total`;
   if (els.menuExpenseCount) els.menuExpenseCount.textContent = String(expenses.length);
   els.expenseList.innerHTML = expenses.length
@@ -488,7 +654,6 @@ function renderExpenses(expenses = []) {
           <div>
             <strong>${expense.title}</strong>
             <div class="list-item-meta">${expense.expenseDate || ""} - ${expense.splitType} - ${expense.status}</div>
-            <div class="list-item-meta">Expense ID: ${expense.id}</div>
             ${expense.payerContributions?.length ? `<div class="list-item-meta">Paid by ${expense.payerContributions.map((entry) => `${memberLabel(state.members.find((member) => (member.userId || member.user_id) === entry.userId))}: ${money(entry.amountMinor)}`).join(", ")}</div>` : ""}
           </div>
           <div class="expense-actions">
@@ -505,6 +670,7 @@ function renderExpenses(expenses = []) {
 }
 
 function renderPayments(payments = []) {
+  state.payments = payments;
   els.paymentCount.textContent = `${payments.length} total`;
   if (els.menuPaymentCount) els.menuPaymentCount.textContent = String(payments.length);
   els.paymentList.innerHTML = payments.length
@@ -515,7 +681,13 @@ function renderPayments(payments = []) {
             <strong>${payment.method}</strong>
             <div class="list-item-meta">${payment.confirmationStatus} - ${payment.paymentDate || ""}</div>
           </div>
-          <strong>${money(payment.amountMinor)}</strong>
+          <div class="expense-actions">
+            <strong>${money(payment.amountMinor)}</strong>
+            ${isManagement() && payment.confirmationStatus === "pending" ? `
+              <button type="button" data-approve-payment="${payment.id}">Approve</button>
+              <button type="button" class="danger-btn" data-reject-payment="${payment.id}">Reject</button>
+            ` : ""}
+          </div>
         </div>
       </div>
     `).join("")
@@ -530,9 +702,8 @@ function renderDisputes(disputes = []) {
           <div>
             <strong>${dispute.reason}</strong>
             <div class="list-item-meta">${dispute.status} - ${dispute.expense?.title || "Expense"} - opened by ${dispute.openedByUser?.fullName || dispute.openedByUser?.contact || dispute.openedBy}</div>
-            <div class="list-item-meta">Expense ID: ${dispute.expenseId}</div>
           </div>
-          <code>${dispute.id}</code>
+          <span class="status-pill">${dispute.status}</span>
         </div>
       </div>
     `).join("")
@@ -548,7 +719,7 @@ function renderSettlements(settlements = []) {
             <strong>${settlement.periodStart} to ${settlement.periodEnd}</strong>
             <div class="list-item-meta">${settlement.algorithmVersion} - ${settlement.finalizedAt ? "finalized" : "open"}</div>
           </div>
-          <code>${settlement.id}</code>
+          <span class="status-pill">${settlement.finalizedAt ? "Finalized" : "Open"}</span>
         </div>
       </div>
     `).join("")
@@ -844,6 +1015,26 @@ async function confirmPayment(form) {
   await refreshHouse();
 }
 
+async function confirmPaymentById(paymentId) {
+  if (!state.houseId) throw new Error("Select or create a house first");
+  await api(`/houses/${state.houseId}/payments/confirm`, {
+    method: "POST",
+    body: { paymentId },
+  });
+  showToast("Payment approved");
+  await refreshHouse();
+}
+
+async function rejectPaymentById(paymentId) {
+  if (!state.houseId) throw new Error("Select or create a house first");
+  await api(`/houses/${state.houseId}/payments/reject`, {
+    method: "POST",
+    body: { paymentId, reason: "Rejected by manager" },
+  });
+  showToast("Payment rejected");
+  await refreshHouse();
+}
+
 async function createDispute(form) {
   if (!state.houseId) throw new Error("Select or create a house first");
   await api(`/houses/${state.houseId}/disputes`, {
@@ -891,7 +1082,6 @@ bindForm("editExpenseForm", editExpense);
 bindForm("userExpenseForm", submitUserExpense);
 bindForm("paymentForm", createPayment);
 bindForm("userPaymentForm", createPayment);
-bindForm("confirmPaymentForm", confirmPayment);
 bindForm("disputeForm", createDispute);
 bindForm("userDisputeForm", createDispute);
 
@@ -979,6 +1169,56 @@ els.expenseList.addEventListener("click", async (event) => {
     showToast(error.message, "error");
   }
 });
+
+els.paymentList.addEventListener("click", async (event) => {
+  const approveId = event.target.getAttribute("data-approve-payment");
+  const rejectId = event.target.getAttribute("data-reject-payment");
+  if (!approveId && !rejectId) return;
+
+  try {
+    if (approveId) {
+      await confirmPaymentById(approveId);
+    } else {
+      await rejectPaymentById(rejectId);
+    }
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+});
+
+els.dashboardRoster.addEventListener("mouseover", (event) => {
+  const card = event.target.closest("[data-member-profile]");
+  if (!card) return;
+  const member = getMemberById(card.getAttribute("data-member-profile"));
+  showMemberProfile(member, card, false);
+});
+
+els.dashboardRoster.addEventListener("mouseleave", () => {
+  hideMemberProfile();
+});
+
+els.dashboardRoster.addEventListener("click", (event) => {
+  const card = event.target.closest("[data-member-profile]");
+  if (!card) return;
+  const member = getMemberById(card.getAttribute("data-member-profile"));
+  showMemberProfile(member, card, true);
+});
+
+els.memberProfilePopover?.addEventListener("click", (event) => {
+  if (event.target.closest("[data-close-member-profile]")) {
+    hideMemberProfile({ force: true });
+  }
+});
+
+els.historyList.addEventListener("mouseover", (event) => {
+  const item = event.target.closest("[data-history-index]");
+  if (!item) return;
+  showHistoryPreview(state.history[Number(item.getAttribute("data-history-index"))], item);
+});
+
+els.historyList.addEventListener("mouseleave", hideHistoryPreview);
+
+els.historyList.addEventListener("click", hideHistoryPreview);
 
 hydrateSession().catch((error) => {
   setToken("");

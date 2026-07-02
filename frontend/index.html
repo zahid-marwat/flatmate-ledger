@@ -44,6 +44,7 @@
             <strong>LEDGER<span>PRO</span></strong>
             <button type="button" class="menu-toggle" aria-label="Open settings">
               <img src="/icons/settings.jpg" alt="" />
+              <span class="menu-toggle-arrow" aria-hidden="true">‹</span>
             </button>
           </div>
           <button type="button" class="menu-item is-active" data-jump="dashboard">
@@ -88,7 +89,7 @@
       </aside>
 
       <section class="content">
-        <nav class="top-panel">
+        <nav class="top-panel" hidden>
           <div>
             <span class="eyebrow">Trace Panel</span>
             <div class="trace-links">
@@ -103,7 +104,7 @@
           </div>
         </nav>
 
-        <header class="hero">
+        <header class="hero app-page" data-page="dashboard">
           <div>
             <p class="eyebrow" id="viewEyebrow">Group Workspace</p>
             <h2 id="viewHeadline">Track bills, cash, payments, and settlement.</h2>
@@ -163,7 +164,7 @@
               <h3>History</h3>
               <span id="historyCount">0 events</span>
             </div>
-            <div id="historyList" class="ledger"></div>
+            <div id="historyList" class="ledger history-window"></div>
           </article>
         </section>
 
@@ -349,7 +350,7 @@
               <span>Admin only</span>
             </div>
             <form id="editExpenseForm" class="stack compact">
-              <input name="expenseId" placeholder="Expense ID" />
+              <select id="editExpenseId" name="expenseId"></select>
               <select name="title">
                 <option value="">Keep title</option>
                 <option value="Water">Water</option>
@@ -385,10 +386,6 @@
               <input name="amountPkr" placeholder="Amount in PKR" />
               <button type="submit">Submit Cash Deposit</button>
             </form>
-            <form id="confirmPaymentForm" class="stack compact subtle-space">
-              <input name="paymentId" placeholder="Payment ID to confirm" />
-              <button type="submit">Confirm Payment</button>
-            </form>
           </article>
 
           <article class="panel app-page" data-page="disputes" hidden>
@@ -397,7 +394,7 @@
               <span>Open issue tracking</span>
             </div>
             <form id="disputeForm" class="stack compact">
-              <input name="expenseId" placeholder="Expense ID" />
+              <select id="disputeExpenseId" name="expenseId"></select>
               <textarea name="reason" rows="3" placeholder="Reason"></textarea>
               <button type="submit">Open Dispute</button>
             </form>
@@ -432,7 +429,7 @@
               <span>For a specific expense</span>
             </div>
             <form id="userDisputeForm" class="stack compact">
-              <input name="expenseId" placeholder="Expense ID" />
+              <select id="userDisputeExpenseId" name="expenseId"></select>
               <textarea name="reason" rows="3" placeholder="Reason"></textarea>
               <button type="submit">Raise Dispute</button>
             </form>
@@ -511,6 +508,8 @@
     </main>
 
     <div id="toast" class="toast" hidden></div>
+    <div id="memberProfilePopover" class="member-profile-popover" hidden></div>
+    <div id="historyPreviewPopover" class="history-preview-popover" hidden></div>
     <script type="module" src="/app.js"></script>
   </body>
 </html>
