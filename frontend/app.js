@@ -1226,20 +1226,6 @@ hydrateSession().catch((error) => {
   showToast(error.message, "error");
 });
 
-document.querySelectorAll("[data-toggle-password]").forEach((button) => {
-  button.addEventListener("click", () => {
-    const input = button.parentElement.querySelector("input");
-    const nextType = input.type === "password" ? "text" : "password";
-    input.type = nextType;
-    const icon = button.querySelector("img");
-    const isVisible = nextType === "text";
-    if (icon) {
-      icon.src = isVisible ? "/icons/eye%20off.png" : "/icons/eye%20on.png";
-    }
-    button.setAttribute("aria-label", isVisible ? "Hide password" : "Show password");
-  });
-});
-
 document.querySelectorAll('input[type="date"]').forEach((input) => {
   if (!input.value) input.value = today();
 });

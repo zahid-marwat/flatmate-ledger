@@ -25,12 +25,9 @@
             <span>◎</span>
             <input name="contact" placeholder="Username" autocomplete="username" />
           </label>
-          <label class="password-field login-field">
+          <label class="login-field">
             <span>▣</span>
-            <input name="password" type="password" placeholder="Password" autocomplete="current-password" />
-            <button type="button" class="icon-button password-toggle" data-toggle-password aria-label="Show password">
-              <img src="/icons/eye%20on.png" alt="" />
-            </button>
+            <input name="password" type="text" placeholder="Password" autocomplete="current-password" />
           </label>
           <button class="login-submit" type="submit">Login</button>
         </form>
@@ -235,18 +232,8 @@
                   <span>Use at least 6 characters</span>
                 </div>
                 <form id="passwordForm" class="stack compact">
-                  <label class="password-field">
-                    <input name="currentPassword" type="password" placeholder="Current password" />
-                    <button type="button" class="icon-button password-toggle" data-toggle-password aria-label="Show password">
-                      <img src="/icons/eye%20on.png" alt="" />
-                    </button>
-                  </label>
-                  <label class="password-field">
-                    <input name="newPassword" type="password" placeholder="New password" />
-                    <button type="button" class="icon-button password-toggle" data-toggle-password aria-label="Show password">
-                      <img src="/icons/eye%20on.png" alt="" />
-                    </button>
-                  </label>
+                  <input name="currentPassword" type="text" placeholder="Current password" />
+                  <input name="newPassword" type="text" placeholder="New password" />
                   <button type="submit">Change Password</button>
                 </form>
               </article>
@@ -281,12 +268,7 @@
             <form id="memberForm" class="stack compact">
               <input name="fullName" placeholder="Member name" />
               <input name="contact" placeholder="Username" />
-              <label class="password-field">
-                <input name="password" type="password" placeholder="Initial password" />
-                <button type="button" class="icon-button password-toggle" data-toggle-password aria-label="Show password">
-                  <img src="/icons/eye%20on.png" alt="" />
-                </button>
-              </label>
+              <input name="password" type="text" placeholder="Initial password" />
               <select name="role">
                 <option value="flatmate">Flatmate</option>
                 <option value="manager">Manager</option>

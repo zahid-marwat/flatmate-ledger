@@ -736,17 +736,6 @@ button:hover {
   font-size: 11px;
 }
 
-.password-field {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-  align-items: stretch;
-}
-
-.password-field button {
-  padding: 0;
-}
-
 .icon-button {
   width: 46px;
   height: auto;
@@ -1343,9 +1332,6 @@ button:hover {
   .icon-button {
     width: 48px;
     min-width: 48px;
-  }
-  .password-field {
-    grid-template-columns: minmax(0, 1fr) auto;
   }
   .ledger-item-top, .list-item-top {
     flex-direction: column;
