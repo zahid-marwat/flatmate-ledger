@@ -1142,6 +1142,7 @@ button:hover {
   z-index: 80;
   width: min(320px, calc(100vw - 24px));
   color: var(--text);
+  pointer-events: none;
 }
 
 .member-profile-card {
@@ -1159,20 +1160,13 @@ button:hover {
 }
 
 .member-profile-close {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 32px;
-  min-height: 32px;
-  padding: 0;
-  border-radius: 999px;
+  display: none;
 }
 
 .member-profile-head {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-right: 34px;
 }
 
 .member-profile-head strong {
@@ -1234,8 +1228,7 @@ button:hover {
 }
 
 .member-profile-section {
-  display: grid;
-  gap: 6px;
+  display: none;
 }
 
 .member-profile-section h4 {

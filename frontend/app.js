@@ -13,6 +13,7 @@ const state = {
   sidebarCollapsed: localStorage.getItem("flatmateLedgerSidebarCollapsed") === "true",
   currentPage: localStorage.getItem("flatmateLedgerPage") || "dashboard",
   isGlobalAdmin: false,
+  memberProfilePinnedId: "",
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -424,9 +425,13 @@ function memberProfileHtml(member) {
 
 function showMemberProfile(member, anchor = null, pinned = false) {
   if (!els.memberProfilePopover || !member) return;
+  const userId = member.userId || member.user_id;
+  if (!pinned && els.memberProfilePopover.classList.contains("is-pinned")) return;
   els.memberProfilePopover.innerHTML = memberProfileHtml(member);
   els.memberProfilePopover.hidden = false;
   els.memberProfilePopover.classList.toggle("is-pinned", pinned);
+  els.memberProfilePopover.dataset.memberProfileUser = userId;
+  state.memberProfilePinnedId = pinned ? userId : "";
   if (anchor) {
     const rect = anchor.getBoundingClientRect();
     const left = Math.min(window.innerWidth - 340, Math.max(12, rect.left));
@@ -441,6 +446,8 @@ function hideMemberProfile({ force = false } = {}) {
   if (!force && els.memberProfilePopover.classList.contains("is-pinned")) return;
   els.memberProfilePopover.hidden = true;
   els.memberProfilePopover.classList.remove("is-pinned");
+  els.memberProfilePopover.dataset.memberProfileUser = "";
+  state.memberProfilePinnedId = "";
 }
 
 function historyPreviewHtml(entry) {
@@ -1200,7 +1207,12 @@ els.dashboardRoster.addEventListener("mouseleave", () => {
 els.dashboardRoster.addEventListener("click", (event) => {
   const card = event.target.closest("[data-member-profile]");
   if (!card) return;
-  const member = getMemberById(card.getAttribute("data-member-profile"));
+  const userId = card.getAttribute("data-member-profile");
+  if (state.memberProfilePinnedId === userId) {
+    hideMemberProfile({ force: true });
+    return;
+  }
+  const member = getMemberById(userId);
   showMemberProfile(member, card, true);
 });
 
