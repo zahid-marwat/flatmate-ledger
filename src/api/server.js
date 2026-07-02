@@ -32,6 +32,7 @@ async function serveStatic(req, res) {
     url.pathname.startsWith("/health") ||
     url.pathname.startsWith("/auth/") ||
     url.pathname === "/me" ||
+    url.pathname.startsWith("/me/") ||
     url.pathname === "/houses" ||
     url.pathname.startsWith("/houses/") ||
     url.pathname.startsWith("/files/")

@@ -6,6 +6,7 @@ const state = {
   memberships: [],
   members: [],
   currentHouse: null,
+  sidebarCollapsed: localStorage.getItem("flatmateLedgerSidebarCollapsed") === "true",
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -13,6 +14,9 @@ const $ = (selector) => document.querySelector(selector);
 const els = {
   loginView: $("#loginView"),
   appView: $("#appView"),
+  sidebar: $(".sidebar"),
+  menuToggle: $(".menu-toggle"),
+  sidebarDisplayBtn: $("#sidebarDisplayBtn"),
   adminView: $("#adminView"),
   userView: $("#userView"),
   adminHousePanel: $("#adminHousePanel"),
@@ -25,6 +29,8 @@ const els = {
   menuExpenseCount: $("#menuExpenseCount"),
   menuPaymentCount: $("#menuPaymentCount"),
   menuHistoryCount: $("#menuHistoryCount"),
+  settingsView: $("#settingsView"),
+  settingsAvatarPreview: $("#settingsAvatarPreview"),
   topActiveGroup: $("#topActiveGroup"),
   workspaceTitle: $("#workspaceTitle"),
   viewEyebrow: $("#viewEyebrow"),
@@ -69,6 +75,8 @@ const els = {
   toast: $("#toast"),
 };
 
+let refreshTimer = null;
+
 function money(minor) {
   const value = (Number(minor) || 0) / 100;
   return new Intl.NumberFormat("en-PK", { style: "currency", currency: "PKR" }).format(value);
@@ -85,12 +93,19 @@ function showToast(message, tone = "info") {
 }
 
 async function api(path, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  const requestPath = method === "GET"
+    ? `${path}${path.includes("?") ? "&" : "?"}_=${Date.now()}`
+    : path;
   const headers = new Headers(options.headers || {});
   headers.set("content-type", "application/json");
+  headers.set("cache-control", "no-cache");
   if (state.token) headers.set("authorization", `Bearer ${state.token}`);
 
-  const response = await fetch(path, {
+  const response = await fetch(requestPath, {
     ...options,
+    method,
+    cache: "no-store",
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
@@ -145,6 +160,59 @@ function setHouseId(houseId) {
   if (els.houseSelect) els.houseSelect.value = state.houseId;
 }
 
+function setSidebarCollapsed(collapsed) {
+  state.sidebarCollapsed = Boolean(collapsed);
+  localStorage.setItem("flatmateLedgerSidebarCollapsed", String(state.sidebarCollapsed));
+  els.appView?.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
+  if (els.sidebarDisplayBtn) {
+    els.sidebarDisplayBtn.textContent = state.sidebarCollapsed ? "Show Sidebar Options" : "Hide Sidebar Options";
+  }
+}
+
+function currentUserMember() {
+  if (!state.user) return null;
+  return {
+    userId: state.user.id,
+    user: state.user,
+    role: state.role,
+  };
+}
+
+function renderSettingsAvatarPreview(avatarUrl = state.user?.avatarUrl || null) {
+  if (!els.settingsAvatarPreview) return;
+  const previewUser = state.user ? { ...state.user, avatarUrl } : null;
+  els.settingsAvatarPreview.innerHTML = `
+    ${avatarMarkup({ ...currentUserMember(), user: previewUser })}
+    <div>
+      <strong>${state.user?.fullName || "Not signed in"}</strong>
+      <span>${avatarUrl || "Default avatar"}</span>
+    </div>
+  `;
+}
+
+function populateSettings() {
+  if (!state.user) return;
+  const profileForm = document.getElementById("profileForm");
+  const avatarForm = document.getElementById("avatarForm");
+  if (profileForm) {
+    profileForm.fullName.value = state.user.fullName || "";
+    profileForm.contact.value = state.user.contact || "";
+  }
+  if (avatarForm) {
+    avatarForm.avatarUrl.value = state.user.avatarUrl || "";
+  }
+  renderSettingsAvatarPreview();
+}
+
+function showSettingsPage(pageKey = "profile") {
+  document.querySelectorAll("[data-settings-page]").forEach((page) => {
+    page.hidden = page.getAttribute("data-settings-page") !== pageKey;
+  });
+  document.querySelectorAll("[data-settings-tab]").forEach((button) => {
+    button.classList.toggle("is-active", button.getAttribute("data-settings-tab") === pageKey);
+  });
+}
+
 function setAppMode() {
   const signedIn = Boolean(state.token && state.user);
   els.loginView.hidden = signedIn;
@@ -155,18 +223,19 @@ function setAppMode() {
   els.adminView.hidden = !canManage;
   els.adminHousePanel.hidden = !isAdmin();
   if (els.groupsMenuItem) els.groupsMenuItem.hidden = !isAdmin();
-  els.adminMemberPanel.hidden = !isAdmin();
-  els.adminEditExpensePanel.hidden = !isAdmin();
-  els.adminQuickActions.hidden = !canManage;
+  if (els.adminMemberPanel) els.adminMemberPanel.hidden = !isAdmin();
+  if (els.adminEditExpensePanel) els.adminEditExpensePanel.hidden = !isAdmin();
+  if (els.adminQuickActions) els.adminQuickActions.hidden = !canManage;
   els.userView.hidden = canManage;
-  els.workspaceTitle.textContent = canManage ? "Group Console" : "My Ledger";
+  if (els.workspaceTitle) els.workspaceTitle.textContent = canManage ? "Group Console" : "My Ledger";
   els.viewEyebrow.textContent = canManage ? `${state.role} Workspace` : "Flatmate Workspace";
-  els.viewHeadline.textContent = admin
+  els.viewHeadline.textContent = isAdmin()
     ? "Track groups, bills, cash, payments, and settlement."
     : "See your balance, group expenses, and payment status.";
   els.signedInUser.textContent = state.user.fullName || state.user.contact;
   els.signedInRole.textContent = state.role || "No house role";
   if (els.menuGroupCount) els.menuGroupCount.textContent = String(state.memberships.length || 0);
+  populateSettings();
 }
 
 function renderSummary(summary) {
@@ -460,16 +529,25 @@ async function hydrateSession() {
   state.memberships = me.memberships || [];
   const membership = currentMembership();
   state.role = membership?.role || null;
-
-  if (!state.houseId && membership) {
-    setHouseId(membership.houseId || membership.house_id);
-  }
+  setHouseId(membership ? membership.houseId || membership.house_id : "");
   setAppMode();
   await refreshHouse();
 }
 
 async function refreshHouse() {
-  if (!state.token || !state.houseId) return;
+  if (!state.token || !state.houseId) {
+    if (els.houseSelect) {
+      els.houseSelect.innerHTML = [
+        `<option value="">Select group</option>`,
+        ...state.memberships.map((membership) => {
+          const houseId = membership.houseId || membership.house_id;
+          const houseName = membership.house?.name || houseId;
+          return `<option value="${houseId}">${houseName}</option>`;
+        }),
+      ].join("");
+    }
+    return;
+  }
 
   const members = await api(`/houses/${state.houseId}/members`);
   state.members = members.members || [];
@@ -510,6 +588,18 @@ async function refreshHouse() {
       return `<option value="${houseId}" ${houseId === state.houseId ? "selected" : ""}>${houseName}</option>`;
     }),
   ].join("");
+}
+
+async function refreshCurrentSession() {
+  if (!state.token || document.hidden) return;
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(async () => {
+    try {
+      await hydrateSession();
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  }, 80);
 }
 
 async function createUser(form) {
@@ -676,6 +766,33 @@ async function changePassword(form) {
   showToast("Password changed");
 }
 
+async function updateProfile(form) {
+  const result = await api("/me/profile", {
+    method: "PATCH",
+    body: {
+      fullName: form.fullName.value,
+      contact: form.contact.value,
+    },
+  });
+  state.user = result.user;
+  populateSettings();
+  showToast("Username updated");
+  await hydrateSession();
+}
+
+async function updateAvatar(form) {
+  const result = await api("/me/profile", {
+    method: "PATCH",
+    body: {
+      avatarUrl: form.avatarUrl.value,
+    },
+  });
+  state.user = result.user;
+  populateSettings();
+  showToast("Icon updated");
+  await refreshHouse();
+}
+
 async function confirmPayment(form) {
   if (!state.houseId) throw new Error("Select or create a house first");
   await api(`/houses/${state.houseId}/payments/confirm`, {
@@ -706,14 +823,15 @@ async function generateSettlement() {
   await refreshHouse();
 }
 
-function bindForm(id, handler) {
+function bindForm(id, handler, options = {}) {
   const form = document.getElementById(id);
   if (!form) return;
+  const shouldReset = options.reset !== false;
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
       await handler(form);
-      form.reset();
+      if (shouldReset) form.reset();
     } catch (error) {
       showToast(error.message, "error");
     }
@@ -722,6 +840,8 @@ function bindForm(id, handler) {
 
 bindForm("loginForm", login);
 bindForm("passwordForm", changePassword);
+bindForm("profileForm", updateProfile, { reset: false });
+bindForm("avatarForm", updateAvatar, { reset: false });
 bindForm("houseForm", createHouse);
 bindForm("memberForm", addMember);
 bindForm("roleForm", assignRole);
@@ -745,6 +865,15 @@ els.logoutBtn.addEventListener("click", () => {
   setAppMode();
 });
 
+els.sidebarDisplayBtn?.addEventListener("click", () => {
+  setSidebarCollapsed(!state.sidebarCollapsed);
+});
+
+els.menuToggle?.addEventListener("click", () => {
+  showSettingsPage("profile");
+  els.settingsView?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
 els.houseSelect.addEventListener("change", async () => {
   setHouseId(els.houseSelect.value);
   await refreshHouse();
@@ -763,11 +892,22 @@ document.querySelectorAll("[data-jump]").forEach((button) => {
       disputes: isManagement() ? "disputeForm" : "userDisputeForm",
       settlement: "settlementList",
       history: "historyList",
+      settings: "settingsView",
     };
     document.getElementById(targetMap[key] || "dashboardView")?.scrollIntoView({ behavior: "smooth", block: "center" });
     document.querySelectorAll(".menu-item").forEach((item) => item.classList.remove("is-active"));
     button.classList.add("is-active");
   });
+});
+
+document.querySelectorAll("[data-settings-tab]").forEach((button) => {
+  button.addEventListener("click", () => {
+    showSettingsPage(button.getAttribute("data-settings-tab"));
+  });
+});
+
+document.getElementById("avatarForm")?.avatarUrl.addEventListener("change", (event) => {
+  renderSettingsAvatarPreview(event.target.value || null);
 });
 
 els.generateSettlementBtn.addEventListener("click", async () => {
@@ -834,3 +974,9 @@ document.querySelectorAll("[data-toggle-password]").forEach((button) => {
 document.querySelectorAll('input[type="date"]').forEach((input) => {
   if (!input.value) input.value = today();
 });
+
+setSidebarCollapsed(state.sidebarCollapsed);
+
+window.addEventListener("focus", refreshCurrentSession);
+window.addEventListener("pageshow", refreshCurrentSession);
+document.addEventListener("visibilitychange", refreshCurrentSession);

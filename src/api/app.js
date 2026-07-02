@@ -250,6 +250,17 @@ async function handleChangePassword(request) {
   }));
 }
 
+async function handleUpdateProfile(request) {
+  const user = ensureUser(request);
+  const body = await readJson(request);
+  return jsonResponse(await authService.updateProfile({
+    userId: user.id,
+    fullName: optionalString(body.fullName),
+    contact: optionalString(body.contact),
+    avatarUrl: body.avatarUrl === undefined ? undefined : optionalString(body.avatarUrl),
+  }));
+}
+
 function handleMe(request) {
   const user = ensureUser(request);
   const memberships = [...store.houseMembers.values()]
@@ -644,6 +655,7 @@ const routes = [
   ["POST", "/admin/users", handleCreatePasswordUser],
   ["POST", "/auth/login", handlePasswordLogin],
   ["POST", "/me/password", handleChangePassword],
+  ["PATCH", "/me/profile", handleUpdateProfile],
   ["POST", "/auth/request-otp", handleAuthRequest],
   ["POST", "/auth/verify-otp", handleAuthVerify],
   ["GET", "/me", handleMe],

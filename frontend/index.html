@@ -42,7 +42,7 @@
         <nav class="side-menu">
           <div class="side-menu-head">
             <strong>LEDGER<span>PRO</span></strong>
-            <button type="button" class="menu-toggle" aria-label="Settings">
+            <button type="button" class="menu-toggle" aria-label="Open settings">
               <img src="/icons/settings.jpg" alt="" />
             </button>
           </div>
@@ -114,19 +114,6 @@
             <span>Active group</span>
             <strong id="topActiveGroup">No group selected</strong>
           </div>
-          <details class="account-menu">
-            <summary>
-              <span id="signedInUser">Not signed in</span>
-              <small id="signedInRole">Unknown</small>
-            </summary>
-            <form id="passwordForm" class="stack compact">
-              <input name="currentPassword" type="password" placeholder="Current password" />
-              <input name="newPassword" type="password" placeholder="New password" />
-              <button type="submit">Change Password</button>
-            </form>
-            <code id="tokenState">Not signed in</code>
-            <button id="logoutBtn" type="button" class="subtle-space">Logout</button>
-          </details>
         </nav>
 
         <header class="hero">
@@ -151,7 +138,7 @@
         </header>
 
         <section id="dashboardView" class="grid">
-          <article id="adminMemberPanel" class="panel wide">
+          <article class="panel wide">
             <div class="panel-head">
               <h3>Group Dashboard</h3>
               <span>Visible to admin, manager, and flatmates</span>
@@ -176,8 +163,112 @@
           </article>
         </section>
 
+        <section id="settingsView" class="panel settings-panel">
+          <div class="panel-head">
+            <div>
+              <h3>Settings</h3>
+              <span>Profile, icon, password, display, and session controls</span>
+            </div>
+            <div class="settings-user-card">
+              <span id="signedInUser">Not signed in</span>
+              <small id="signedInRole">Unknown</small>
+            </div>
+          </div>
+
+          <div class="settings-layout">
+            <nav class="settings-tabs" aria-label="Settings pages">
+              <button type="button" class="settings-tab is-active" data-settings-tab="profile">Username</button>
+              <button type="button" class="settings-tab" data-settings-tab="avatar">Icon</button>
+              <button type="button" class="settings-tab" data-settings-tab="password">Password</button>
+              <button type="button" class="settings-tab" data-settings-tab="display">Sidebar</button>
+              <button type="button" class="settings-tab" data-settings-tab="session">Session</button>
+            </nav>
+
+            <div class="settings-pages">
+              <article class="settings-card" data-settings-page="profile">
+                <div class="panel-head">
+                  <h4>Username Change</h4>
+                  <span>Update your display name and login username</span>
+                </div>
+                <form id="profileForm" class="stack compact">
+                  <input name="fullName" placeholder="Display name" />
+                  <input name="contact" placeholder="Username" autocomplete="username" />
+                  <button type="submit">Save Username</button>
+                </form>
+              </article>
+
+              <article class="settings-card" data-settings-page="avatar" hidden>
+                <div class="panel-head">
+                  <h4>Icon Change</h4>
+                  <span>Pick an avatar for your account</span>
+                </div>
+                <form id="avatarForm" class="stack compact">
+                  <select name="avatarUrl">
+                    <option value="">Default flatmate icon</option>
+                    <option value="/avatars/zahid.jpg">Zahid IT guy</option>
+                    <option value="/avatars/asfandyar.jpg">Asfandyar beard guy</option>
+                    <option value="/avatars/muavia.jpg">Muavia dog avatar</option>
+                    <option value="/avatars/maaz.jpg">Maaz dog avatar</option>
+                    <option value="/avatars/saad.jpg">Saad big belly man</option>
+                    <option value="/avatars/shami.jpg">Shami big belly man</option>
+                    <option value="/avatars/hassan.jpg">Hassan normal avatar</option>
+                    <option value="/avatars/faisal.jpg">Faisal normal avatar</option>
+                    <option value="avatar:dog">Fallback dog icon</option>
+                    <option value="avatar:big-belly">Fallback big belly icon</option>
+                    <option value="avatar:beard-guy">Fallback beard guy icon</option>
+                    <option value="avatar:it-guy">Fallback IT guy icon</option>
+                    <option value="avatar:normal">Fallback normal icon</option>
+                  </select>
+                  <div id="settingsAvatarPreview" class="settings-avatar-preview"></div>
+                  <button type="submit">Save Icon</button>
+                </form>
+              </article>
+
+              <article class="settings-card" data-settings-page="password" hidden>
+                <div class="panel-head">
+                  <h4>Password Change</h4>
+                  <span>Use at least 6 characters</span>
+                </div>
+                <form id="passwordForm" class="stack compact">
+                  <label class="password-field">
+                    <input name="currentPassword" type="password" placeholder="Current password" />
+                    <button type="button" class="icon-button password-toggle" data-toggle-password aria-label="Show password">
+                      <img src="/icons/eye%20on.png" alt="" />
+                    </button>
+                  </label>
+                  <label class="password-field">
+                    <input name="newPassword" type="password" placeholder="New password" />
+                    <button type="button" class="icon-button password-toggle" data-toggle-password aria-label="Show password">
+                      <img src="/icons/eye%20on.png" alt="" />
+                    </button>
+                  </label>
+                  <button type="submit">Change Password</button>
+                </form>
+              </article>
+
+              <article class="settings-card" data-settings-page="display" hidden>
+                <div class="panel-head">
+                  <h4>Sidebar Display</h4>
+                  <span>Hide or show the menu rail</span>
+                </div>
+                <p class="muted-copy">Use compact mode when you want more dashboard space. The setting is saved on this browser.</p>
+                <button id="sidebarDisplayBtn" type="button">Hide Sidebar Options</button>
+              </article>
+
+              <article class="settings-card" data-settings-page="session" hidden>
+                <div class="panel-head">
+                  <h4>Session</h4>
+                  <span>Current login token and logout</span>
+                </div>
+                <code id="tokenState">Not signed in</code>
+                <button id="logoutBtn" type="button" class="subtle-space">Logout</button>
+              </article>
+            </div>
+          </div>
+        </section>
+
         <section id="adminView" class="grid">
-          <article class="panel wide">
+          <article id="adminMemberPanel" class="panel wide">
             <div class="panel-head">
               <h3>Add Member Account</h3>
               <span id="memberCount">0</span>

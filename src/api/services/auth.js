@@ -151,6 +151,36 @@ export function createAuthService(store, persistence) {
       return { user: sanitizeUser(updated) };
     },
 
+    async updateProfile({ userId, fullName, contact, avatarUrl }) {
+      const user = store.users.get(userId);
+      if (!user) throw new ApiError(404, "User not found");
+
+      const normalizedContact = contact ? normalizeContact(contact) : user.contact;
+      const existingUser = normalizedContact ? store.usersByContact.get(normalizedContact) : null;
+      if (existingUser && existingUser.id !== userId) {
+        throw new ApiError(409, "This username is already used by another account");
+      }
+
+      const previousContact = user.contact;
+      const updated = {
+        ...user,
+        contact: normalizedContact,
+        phone: normalizedContact && !normalizedContact.includes("@") ? normalizedContact : null,
+        email: normalizedContact && normalizedContact.includes("@") ? normalizedContact : null,
+        fullName: fullName ? fullName.trim() : user.fullName,
+        avatarUrl: avatarUrl === undefined ? user.avatarUrl : avatarUrl || null,
+        updatedAt: new Date().toISOString(),
+      };
+
+      store.users.set(updated.id, updated);
+      if (previousContact && previousContact !== updated.contact) {
+        store.usersByContact.delete(previousContact);
+      }
+      if (updated.contact) store.usersByContact.set(updated.contact, updated);
+      await persistence.saveUser(updated);
+      return { user: sanitizeUser(updated) };
+    },
+
     async requestOtp({ contact, fullName = null }) {
       const normalized = normalizeContact(contact);
       if (authMode() === "supabase" && hasSupabaseAuthEnv()) {
