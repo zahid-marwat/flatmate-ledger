@@ -134,7 +134,8 @@ function mapDispute(row) {
   return {
     id: row.id,
     houseId: row.house_id,
-    expenseId: row.expense_id,
+    expenseId: row.expense_id || null,
+    paymentId: row.payment_id || null,
     openedBy: row.opened_by,
     reason: row.reason,
     status: row.status,
@@ -433,10 +434,10 @@ export function createPersistence(store) {
     },
     async saveDispute(dispute) {
       if (!client.enabled) return;
-      const result = await client.upsert("disputes", [{
+      const row = {
         id: dispute.id,
         house_id: dispute.houseId,
-        expense_id: dispute.expenseId,
+        expense_id: dispute.expenseId || null,
         opened_by: dispute.openedBy,
         reason: dispute.reason,
         status: dispute.status,
@@ -444,7 +445,9 @@ export function createPersistence(store) {
         resolved_by: dispute.resolvedBy,
         resolved_at: dispute.resolvedAt,
         created_at: dispute.createdAt,
-      }]);
+      };
+      if (dispute.paymentId) row.payment_id = dispute.paymentId;
+      const result = await client.upsert("disputes", [row]);
       if (result.error) throw result.error;
     },
     async saveSettlement(settlement) {

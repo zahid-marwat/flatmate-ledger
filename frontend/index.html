@@ -86,6 +86,14 @@
       </aside>
 
       <section class="content">
+        <div class="session-bar">
+          <div>
+            <span>Signed in as</span>
+            <strong id="topSignedInUser">Not signed in</strong>
+          </div>
+          <button id="topLogoutBtn" type="button" class="session-logout">Sign out</button>
+        </div>
+
         <nav class="top-panel" hidden>
           <div>
             <span class="eyebrow">Trace Panel</span>
@@ -376,7 +384,7 @@
               <span>Open issue tracking</span>
             </div>
             <form id="disputeForm" class="stack compact">
-              <select id="disputeExpenseId" name="expenseId"></select>
+              <select id="disputeTarget" name="target"></select>
               <textarea name="reason" rows="3" placeholder="Reason"></textarea>
               <button type="submit">Open Dispute</button>
             </form>
@@ -411,7 +419,7 @@
               <span>For a specific expense</span>
             </div>
             <form id="userDisputeForm" class="stack compact">
-              <select id="userDisputeExpenseId" name="expenseId"></select>
+              <select id="userDisputeTarget" name="target"></select>
               <textarea name="reason" rows="3" placeholder="Reason"></textarea>
               <button type="submit">Raise Dispute</button>
             </form>

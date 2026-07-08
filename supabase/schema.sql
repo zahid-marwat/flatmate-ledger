@@ -227,7 +227,8 @@ create table if not exists public.comments (
 create table if not exists public.disputes (
   id uuid primary key default gen_random_uuid(),
   house_id uuid references public.houses(id) on delete cascade,
-  expense_id uuid not null references public.expenses(id) on delete cascade,
+  expense_id uuid references public.expenses(id) on delete cascade,
+  payment_id uuid references public.payments(id) on delete cascade,
   opened_by uuid not null references public.users(id) on delete cascade,
   reason text not null,
   status text not null default 'open',
@@ -239,6 +240,9 @@ create table if not exists public.disputes (
 
 alter table public.disputes
   add column if not exists house_id uuid references public.houses(id) on delete cascade;
+
+alter table public.disputes
+  add column if not exists payment_id uuid references public.payments(id) on delete cascade;
 
 update public.disputes d
 set house_id = e.house_id

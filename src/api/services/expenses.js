@@ -196,8 +196,8 @@ export function createExpenseService(store, logActivity, persistence) {
     },
 
     async updateExpense({ houseId, actorUserId, expenseId, payload }) {
-      if (!isAdmin(store, houseId, actorUserId)) {
-        throw new ApiError(403, "Only the admin can edit expenses");
+      if (!hasManagementRole(store, houseId, actorUserId)) {
+        throw new ApiError(403, "Only an admin or manager can edit expenses");
       }
       const expense = store.expenses.get(expenseId);
       if (!expense || expense.houseId !== houseId) throw new ApiError(404, "Expense not found");

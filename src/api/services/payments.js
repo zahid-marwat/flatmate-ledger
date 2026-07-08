@@ -131,6 +131,47 @@ export function createPaymentService(store, logActivity, expenseService, persist
       return updated;
     },
 
+    async updatePayment({ houseId, actorUserId, paymentId, payload }) {
+      if (!hasManagementRole(store, houseId, actorUserId)) {
+        throw new ApiError(403, "Only an admin or manager can edit payments");
+      }
+
+      const payment = store.payments.get(paymentId);
+      if (!payment || payment.houseId !== houseId) throw new ApiError(404, "Payment not found");
+      if (payment.confirmationStatus === "confirmed") {
+        throw new ApiError(400, "Confirmed cash deposits cannot be edited");
+      }
+
+      const payerUserId = payload.payerUserId || payment.payerUserId;
+      const receiverUserId = payload.receiverUserId || payment.receiverUserId;
+      if (isGlobalAdmin(store, payerUserId) || isGlobalAdmin(store, receiverUserId)) {
+        throw new ApiError(400, "Global admin cannot be selected as a payment member");
+      }
+      assertHouseMember(store, houseId, payerUserId);
+      assertHouseMember(store, houseId, receiverUserId);
+
+      const amountMinor = payload.amountMinor === undefined
+        ? payment.amountMinor
+        : Math.trunc(Number(payload.amountMinor));
+      if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
+        throw new ApiError(400, "amountMinor must be a positive integer");
+      }
+
+      const updated = {
+        ...payment,
+        payerUserId,
+        receiverUserId,
+        amountMinor,
+        paymentDate: payload.paymentDate || payment.paymentDate,
+        method: payload.method || payment.method,
+        note: payload.note ?? payment.note,
+      };
+      store.payments.set(paymentId, updated);
+      await persistence.savePayment(updated);
+      logActivity(houseId, actorUserId, "payment.updated", "payment", paymentId, { amountMinor, payerUserId });
+      return updated;
+    },
+
     listPayments(houseId) {
       return [...store.payments.values()].filter((payment) => payment.houseId === houseId);
     },

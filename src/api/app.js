@@ -513,21 +513,48 @@ async function handleRejectPayment(request, params) {
   }));
 }
 
+async function handleUpdatePayment(request, params) {
+  const user = ensureUser(request);
+  const body = await readJson(request);
+  return jsonResponse(await paymentService.updatePayment({
+    houseId: params.id,
+    actorUserId: user.id,
+    paymentId: params.paymentId,
+    payload: {
+      payerUserId: optionalString(body.payerUserId),
+      receiverUserId: optionalString(body.receiverUserId),
+      amountMinor: body.amountPkr !== undefined ? toMinorFromRequest(body) : body.amountMinor,
+      paymentDate: optionalString(body.paymentDate),
+      method: body.method ? requireOneOf(body.method, "method", ["cash", "bank", "wallet"]) : undefined,
+      note: optionalString(body.note),
+    },
+  }));
+}
+
 async function handleCreateDispute(request, params) {
   const user = ensureUser(request);
   ensureHouseAccess(params.id, user.id);
   const body = await readJson(request);
-  const expenseId = requireString(body.expenseId, "expenseId");
+  const expenseId = optionalString(body.expenseId);
+  const paymentId = optionalString(body.paymentId);
   const reason = requireString(body.reason, "reason");
-  const expense = store.expenses.get(expenseId);
-  if (!expense || expense.houseId !== params.id) {
+  if (!expenseId && !paymentId) {
+    throw new ApiError(400, "Select an expense or cash deposit to dispute");
+  }
+  const expense = expenseId ? store.expenses.get(expenseId) : null;
+  const payment = paymentId ? store.payments.get(paymentId) : null;
+  if (expenseId && (!expense || expense.houseId !== params.id)) {
     throw new ApiError(404, "Expense not found in this group");
+  }
+  if (paymentId && (!payment || payment.houseId !== params.id)) {
+    throw new ApiError(404, "Cash deposit not found in this group");
   }
   const disputeId = store.createId();
   const dispute = {
     id: disputeId,
     houseId: params.id,
-    expenseId,
+    expenseId: expenseId || null,
+    paymentId: paymentId || null,
     openedBy: user.id,
     reason,
     status: "open",
@@ -538,7 +565,7 @@ async function handleCreateDispute(request, params) {
   };
   store.disputes.set(disputeId, dispute);
   await persistence.saveDispute(dispute);
-  logActivity(params.id, user.id, "dispute.created", "dispute", disputeId, { expenseId, reason });
+  logActivity(params.id, user.id, "dispute.created", "dispute", disputeId, { expenseId, paymentId, reason });
   return jsonResponse(dispute, 201);
 }
 
@@ -548,13 +575,15 @@ function handleListDisputes(request, params) {
   const disputes = [...store.disputes.values()]
     .filter((item) => {
       const expense = store.expenses.get(item.expenseId);
-      return item.houseId === params.id || expense?.houseId === params.id;
+      const payment = store.payments.get(item.paymentId);
+      return item.houseId === params.id || expense?.houseId === params.id || payment?.houseId === params.id;
     })
     .map((item) => ({
       ...item,
-      houseId: item.houseId || store.expenses.get(item.expenseId)?.houseId || null,
+      houseId: item.houseId || store.expenses.get(item.expenseId)?.houseId || store.payments.get(item.paymentId)?.houseId || null,
       openedByUser: store.users.get(item.openedBy) || null,
       expense: store.expenses.get(item.expenseId) || null,
+      payment: store.payments.get(item.paymentId) || null,
     }));
   return jsonResponse({ disputes });
 }
@@ -706,6 +735,7 @@ const routes = [
   ["POST", "/houses/:id/expenses/reject", handleRejectExpense],
   ["POST", "/houses/:id/payments", handleCreatePayment],
   ["GET", "/houses/:id/payments", handleListPayments],
+  ["PATCH", "/houses/:id/payments/:paymentId", handleUpdatePayment],
   ["POST", "/houses/:id/payments/confirm", handleConfirmPayment],
   ["POST", "/houses/:id/payments/reject", handleRejectPayment],
   ["POST", "/houses/:id/disputes", handleCreateDispute],
