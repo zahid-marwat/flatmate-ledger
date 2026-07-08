@@ -240,6 +240,7 @@ function canShowPageElement(element) {
 }
 
 function showAppPage(pageKey = state.currentPage || "dashboard") {
+  hideMemberProfile({ force: true });
   const nextPage = isPageAllowed(pageKey) ? pageKey : "dashboard";
   state.currentPage = nextPage;
   localStorage.setItem("flatmateLedgerPage", nextPage);
@@ -1208,12 +1209,8 @@ els.dashboardRoster.addEventListener("click", (event) => {
   const card = event.target.closest("[data-member-profile]");
   if (!card) return;
   const userId = card.getAttribute("data-member-profile");
-  if (state.memberProfilePinnedId === userId) {
-    hideMemberProfile({ force: true });
-    return;
-  }
   const member = getMemberById(userId);
-  showMemberProfile(member, card, true);
+  showMemberProfile(member, card, false);
 });
 
 els.memberProfilePopover?.addEventListener("click", (event) => {
