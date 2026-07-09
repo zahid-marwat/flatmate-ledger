@@ -10,11 +10,16 @@ import { createPaymentService } from "./services/payments.js";
 import { isGlobalAdminUser, isGlobalAdminUserId as checkGlobalAdminUserId } from "./admin.js";
 import { simplifyDebts } from "../domain/debt.js";
 import {
+  assertAllowedFields,
+  optionalArray,
+  optionalDateString,
   optionalString,
-  requireArray,
+  optionalUsername,
+  requireDateString,
   requireInteger,
   requireOneOf,
   requireString,
+  requireUsername,
 } from "./validation.js";
 
 const store = createStore();
@@ -207,26 +212,68 @@ function toMinorFromRequest(body, minorKey = "amountMinor", pkrKey = "amountPkr"
   return body[minorKey];
 }
 
+function optionalIdArray(value, fieldName) {
+  return optionalArray(value, fieldName).map((item, index) => requireString(item, `${fieldName}[${index}]`, { maxLength: 64 }));
+}
+
+function optionalPercentageSplits(value) {
+  return optionalArray(value, "percentageSplits").map((entry, index) => {
+    assertAllowedFields(entry, ["userId", "percent"], `percentageSplits[${index}]`);
+    const percent = Number(entry.percent);
+    if (!Number.isFinite(percent) || percent <= 0 || percent > 100) {
+      throw new ApiError(400, `percentageSplits[${index}].percent must be between 0 and 100`);
+    }
+    return {
+      userId: requireString(entry.userId, `percentageSplits[${index}].userId`, { maxLength: 64 }),
+      percent,
+    };
+  });
+}
+
+function optionalUnequalSplits(value) {
+  return optionalArray(value, "unequalSplits").map((entry, index) => {
+    assertAllowedFields(entry, ["userId", "amount"], `unequalSplits[${index}]`);
+    const amount = Number(entry.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new ApiError(400, `unequalSplits[${index}].amount must be positive`);
+    }
+    return {
+      userId: requireString(entry.userId, `unequalSplits[${index}].userId`, { maxLength: 64 }),
+      amount,
+    };
+  });
+}
+
+function optionalPayerContributions(value) {
+  return optionalArray(value, "payerContributions").map((entry, index) => {
+    assertAllowedFields(entry, ["userId", "amountMinor"], `payerContributions[${index}]`);
+    return {
+      userId: requireString(entry.userId, `payerContributions[${index}].userId`, { maxLength: 64 }),
+      amountMinor: requireInteger(entry.amountMinor, `payerContributions[${index}].amountMinor`, { min: 1 }),
+    };
+  });
+}
+
 async function handleAuthRequest(request) {
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), ["contact", "fullName"]);
   return jsonResponse(await authService.requestOtp({
-    contact: requireString(body.contact, "contact"),
-    fullName: optionalString(body.fullName),
+    contact: requireString(body.contact, "contact", { maxLength: 120 }),
+    fullName: optionalString(body.fullName, "fullName", { maxLength: 80 }),
   }));
 }
 
 async function handleAuthVerify(request) {
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), ["contact", "code", "fullName"]);
   return jsonResponse(sanitizeUserPayload(await authService.verifyOtp({
-    contact: requireString(body.contact, "contact"),
-    code: requireString(String(body.code ?? ""), "code"),
-    fullName: optionalString(body.fullName),
+    contact: requireString(body.contact, "contact", { maxLength: 120 }),
+    code: requireString(String(body.code ?? ""), "code", { minLength: 4, maxLength: 12 }),
+    fullName: optionalString(body.fullName, "fullName", { maxLength: 80 }),
   })));
 }
 
 async function handleCreatePasswordUser(request) {
   const actor = getSessionUser(request);
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), ["contact", "fullName", "password", "role", "houseId", "avatarUrl", "setupKey"]);
   const configuredSetupKey = process.env.ADMIN_SETUP_KEY;
   const isSetupKeyValid = configuredSetupKey && body.setupKey === configuredSetupKey;
   if (actor) {
@@ -243,9 +290,9 @@ async function handleCreatePasswordUser(request) {
     throw new ApiError(400, "Admin is a global account and cannot be added to a group");
   }
   const result = await authService.createPasswordUser({
-    contact: requireString(body.contact, "contact"),
-    fullName: requireString(body.fullName, "fullName"),
-    password: requireString(body.password, "password"),
+    contact: requireUsername(body.contact, "username"),
+    fullName: requireString(body.fullName, "fullName", { maxLength: 80 }),
+    password: requireString(body.password, "password", { minLength: 6, maxLength: 128 }),
     role,
   });
 
@@ -257,7 +304,7 @@ async function handleCreatePasswordUser(request) {
         id: result.user.id,
         fullName: result.user.fullName,
         contact: result.user.contact,
-        avatarUrl: optionalString(body.avatarUrl),
+        avatarUrl: optionalString(body.avatarUrl, "avatarUrl", { maxLength: 255 }),
       },
       role,
       actorIsGlobalAdmin: isGlobalAdmin(actor),
@@ -302,14 +349,15 @@ async function handleCreatePasswordUser(request) {
 }
 
 async function handlePasswordLogin(request) {
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), ["contact", "password"]);
   return jsonResponse(sanitizeUserPayload(await authService.loginWithPassword({
-    contact: requireString(body.contact, "contact"),
-    password: requireString(body.password, "password"),
+    contact: requireUsername(body.contact, "username"),
+    password: requireString(body.password, "password", { minLength: 1, maxLength: 128 }),
   })));
 }
 
 async function handleLogout(request) {
+  assertAllowedFields(await readJson(request), []);
   const token = readBearerToken(request);
   if (token) {
     store.sessions.delete(token);
@@ -320,22 +368,22 @@ async function handleLogout(request) {
 
 async function handleChangePassword(request) {
   const user = ensureUser(request);
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), ["currentPassword", "newPassword"]);
   return jsonResponse(sanitizeUserPayload(await authService.changePassword({
     userId: user.id,
-    currentPassword: requireString(body.currentPassword, "currentPassword"),
-    newPassword: requireString(body.newPassword, "newPassword"),
+    currentPassword: requireString(body.currentPassword, "currentPassword", { minLength: 1, maxLength: 128 }),
+    newPassword: requireString(body.newPassword, "newPassword", { minLength: 6, maxLength: 128 }),
   })));
 }
 
 async function handleUpdateProfile(request) {
   const user = ensureUser(request);
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), ["fullName", "contact", "avatarUrl"]);
   return jsonResponse(sanitizeUserPayload(await authService.updateProfile({
     userId: user.id,
-    fullName: optionalString(body.fullName),
-    contact: optionalString(body.contact),
-    avatarUrl: body.avatarUrl === undefined ? undefined : optionalString(body.avatarUrl),
+    fullName: optionalString(body.fullName, "fullName", { maxLength: 80 }),
+    contact: optionalUsername(body.contact, "username"),
+    avatarUrl: body.avatarUrl === undefined ? undefined : optionalString(body.avatarUrl, "avatarUrl", { maxLength: 255 }),
   })));
 }
 
@@ -370,14 +418,14 @@ async function handleCreateHouse(request) {
   if (!canCreateGroup) {
     throw new ApiError(403, "Only the admin can create groups");
   }
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), ["name", "address", "city", "baseCurrency", "timezone"]);
   return jsonResponse(await houseService.createHouse({
     creatorUserId: user.id,
-    name: requireString(body.name, "name"),
-    address: optionalString(body.address),
-    city: optionalString(body.city),
-    baseCurrency: requireString(body.baseCurrency || "PKR", "baseCurrency"),
-    timezone: requireString(body.timezone || "Asia/Karachi", "timezone"),
+    name: requireString(body.name, "name", { maxLength: 80 }),
+    address: optionalString(body.address, "address", { maxLength: 160 }),
+    city: optionalString(body.city, "city", { maxLength: 80 }),
+    baseCurrency: requireString(body.baseCurrency || "PKR", "baseCurrency", { maxLength: 3, pattern: /^[A-Z]{3}$/ }),
+    timezone: requireString(body.timezone || "Asia/Karachi", "timezone", { maxLength: 64, pattern: /^[A-Za-z0-9_+/-]+$/ }),
     creatorRole: getPrimaryManagementRole(user.id),
     createCreatorMembership: !isGlobalAdmin(user),
   }), 201);
@@ -401,21 +449,22 @@ function handleListMembers(request, params) {
 
 async function handleAddMember(request, params) {
   const user = ensureUser(request);
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), ["user", "role"]);
+  assertAllowedFields(body.user || {}, ["fullName", "contact", "phone", "email", "roomName", "phoneDisplay", "isDefaultPayer", "defaultCurrency", "locale", "avatarUrl"], "user");
   const result = await houseService.addMember({
     houseId: params.id,
     actorUserId: user.id,
     user: {
-      fullName: requireString(body.user?.fullName, "user.fullName"),
-      contact: optionalString(body.user?.contact),
-      phone: optionalString(body.user?.phone),
-      email: optionalString(body.user?.email),
-      roomName: optionalString(body.user?.roomName),
-      phoneDisplay: optionalString(body.user?.phoneDisplay),
+      fullName: requireString(body.user?.fullName, "user.fullName", { maxLength: 80 }),
+      contact: optionalUsername(body.user?.contact, "user.username"),
+      phone: optionalString(body.user?.phone, "user.phone", { maxLength: 24, pattern: /^\+?[0-9 -]+$/ }),
+      email: optionalString(body.user?.email, "user.email", { maxLength: 120, pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ }),
+      roomName: optionalString(body.user?.roomName, "user.roomName", { maxLength: 40 }),
+      phoneDisplay: optionalString(body.user?.phoneDisplay, "user.phoneDisplay", { maxLength: 40 }),
       isDefaultPayer: parseBoolean(body.user?.isDefaultPayer, false),
-      defaultCurrency: optionalString(body.user?.defaultCurrency) || "PKR",
-      locale: optionalString(body.user?.locale) || "en-PK",
-      avatarUrl: optionalString(body.user?.avatarUrl),
+      defaultCurrency: optionalString(body.user?.defaultCurrency, "user.defaultCurrency", { maxLength: 3, pattern: /^[A-Z]{3}$/ }) || "PKR",
+      locale: optionalString(body.user?.locale, "user.locale", { maxLength: 12, pattern: /^[A-Za-z]{2,3}(?:-[A-Za-z]{2})?$/ }) || "en-PK",
+      avatarUrl: optionalString(body.user?.avatarUrl, "user.avatarUrl", { maxLength: 255 }),
     },
     role: requireOneOf(body.role || "flatmate", "role", ["flatmate", "manager", "viewer"]),
     actorIsGlobalAdmin: isGlobalAdmin(user),
@@ -425,7 +474,7 @@ async function handleAddMember(request, params) {
 
 async function handleUpdateMember(request, params) {
   const user = ensureUser(request);
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), ["role"]);
   return jsonResponse(await houseService.updateMember({
     houseId: params.id,
     actorUserId: user.id,
@@ -439,67 +488,100 @@ async function handleUpdateMember(request, params) {
 
 async function handleCreateInvitation(request, params) {
   const user = ensureUser(request);
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), ["contact", "role"]);
   return jsonResponse(await houseService.createInvitation({
     houseId: params.id,
     actorUserId: user.id,
-    contact: requireString(body.contact, "contact"),
+    contact: requireUsername(body.contact, "username"),
     role: requireOneOf(body.role || "flatmate", "role", ["flatmate", "manager", "viewer"]),
   }), 201);
 }
 
 async function handleCreateExpense(request, params) {
   const user = ensureUser(request);
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), [
+    "title",
+    "amountMinor",
+    "amountPkr",
+    "expenseDate",
+    "dueDate",
+    "categoryId",
+    "note",
+    "splitType",
+    "participantUserIds",
+    "selectedUserIds",
+    "percentageSplits",
+    "unequalSplits",
+    "payerContributions",
+    "currency",
+    "paidByUserId",
+    "receiptUrl",
+    "requiresApproval",
+    "isRecurring",
+    "recurrenceId",
+  ]);
   return jsonResponse(await expenseService.createExpense({
     houseId: params.id,
     actorUserId: user.id,
     payload: {
-      title: requireString(body.title, "title"),
+      title: requireString(body.title, "title", { maxLength: 80 }),
       amountMinor: requireInteger(toMinorFromRequest(body), "amount", { min: 1 }),
-      expenseDate: requireString(body.expenseDate || new Date().toISOString().slice(0, 10), "expenseDate"),
-      dueDate: optionalString(body.dueDate),
-      categoryId: optionalString(body.categoryId),
-      note: optionalString(body.note),
+      expenseDate: requireDateString(body.expenseDate || new Date().toISOString().slice(0, 10), "expenseDate"),
+      dueDate: optionalDateString(body.dueDate, "dueDate"),
+      categoryId: optionalString(body.categoryId, "categoryId", { maxLength: 64 }),
+      note: optionalString(body.note, "note", { maxLength: 500 }),
       splitType: requireOneOf(body.splitType, "splitType", ["equal_all", "equal_selected", "percentage", "unequal"]),
-      participantUserIds: Array.isArray(body.participantUserIds) ? body.participantUserIds : [],
-      selectedUserIds: Array.isArray(body.selectedUserIds) ? body.selectedUserIds : [],
-      percentageSplits: Array.isArray(body.percentageSplits) ? body.percentageSplits : [],
-      unequalSplits: Array.isArray(body.unequalSplits) ? body.unequalSplits : [],
-      payerContributions: Array.isArray(body.payerContributions) ? body.payerContributions : [],
+      participantUserIds: optionalIdArray(body.participantUserIds, "participantUserIds"),
+      selectedUserIds: optionalIdArray(body.selectedUserIds, "selectedUserIds"),
+      percentageSplits: optionalPercentageSplits(body.percentageSplits),
+      unequalSplits: optionalUnequalSplits(body.unequalSplits),
+      payerContributions: optionalPayerContributions(body.payerContributions),
       guestShareMinor: 0,
       hostUserId: null,
-      currency: optionalString(body.currency) || "PKR",
-      paidByUserId: optionalString(body.paidByUserId) || user.id,
-      receiptUrl: optionalString(body.receiptUrl),
+      currency: optionalString(body.currency, "currency", { maxLength: 3, pattern: /^[A-Z]{3}$/ }) || "PKR",
+      paidByUserId: optionalString(body.paidByUserId, "paidByUserId", { maxLength: 64 }) || user.id,
+      receiptUrl: optionalString(body.receiptUrl, "receiptUrl", { maxLength: 255 }),
       requiresApproval: isManagementRole(getHouseRole(params.id, user.id))
         ? parseBoolean(body.requiresApproval, false)
         : true,
       isRecurring: parseBoolean(body.isRecurring, false),
-      recurrenceId: optionalString(body.recurrenceId),
+      recurrenceId: optionalString(body.recurrenceId, "recurrenceId", { maxLength: 64 }),
     },
   }), 201);
 }
 
 async function handleUpdateExpense(request, params) {
   const user = ensureUser(request);
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), [
+    "title",
+    "amountMinor",
+    "amountPkr",
+    "expenseDate",
+    "note",
+    "splitType",
+    "participantUserIds",
+    "selectedUserIds",
+    "percentageSplits",
+    "unequalSplits",
+    "payerContributions",
+    "paidByUserId",
+  ]);
   return jsonResponse(await expenseService.updateExpense({
     houseId: params.id,
     actorUserId: user.id,
     expenseId: params.expenseId,
     payload: {
-      title: optionalString(body.title),
+      title: optionalString(body.title, "title", { maxLength: 80 }),
       amountMinor: body.amountPkr !== undefined ? toMinorFromRequest(body) : body.amountMinor,
-      expenseDate: optionalString(body.expenseDate),
-      note: optionalString(body.note),
+      expenseDate: optionalDateString(body.expenseDate, "expenseDate"),
+      note: optionalString(body.note, "note", { maxLength: 500 }),
       splitType: body.splitType ? requireOneOf(body.splitType, "splitType", ["equal_all", "equal_selected", "percentage", "unequal"]) : undefined,
-      participantUserIds: Array.isArray(body.participantUserIds) ? body.participantUserIds : undefined,
-      selectedUserIds: Array.isArray(body.selectedUserIds) ? body.selectedUserIds : undefined,
-      percentageSplits: Array.isArray(body.percentageSplits) ? body.percentageSplits : undefined,
-      unequalSplits: Array.isArray(body.unequalSplits) ? body.unequalSplits : undefined,
-      payerContributions: Array.isArray(body.payerContributions) ? body.payerContributions : undefined,
-      paidByUserId: optionalString(body.paidByUserId),
+      participantUserIds: body.participantUserIds === undefined ? undefined : optionalIdArray(body.participantUserIds, "participantUserIds"),
+      selectedUserIds: body.selectedUserIds === undefined ? undefined : optionalIdArray(body.selectedUserIds, "selectedUserIds"),
+      percentageSplits: body.percentageSplits === undefined ? undefined : optionalPercentageSplits(body.percentageSplits),
+      unequalSplits: body.unequalSplits === undefined ? undefined : optionalUnequalSplits(body.unequalSplits),
+      payerContributions: body.payerContributions === undefined ? undefined : optionalPayerContributions(body.payerContributions),
+      paidByUserId: optionalString(body.paidByUserId, "paidByUserId", { maxLength: 64 }),
     },
   }));
 }
@@ -512,80 +594,99 @@ function handleListExpenses(request, params) {
 
 async function handleApproveExpense(request, params) {
   const user = ensureUser(request);
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), ["expenseId"]);
   return jsonResponse(await expenseService.approveExpense({
     houseId: params.id,
     actorUserId: user.id,
-    expenseId: requireString(body.expenseId, "expenseId"),
+    expenseId: requireString(body.expenseId, "expenseId", { maxLength: 64 }),
   }));
 }
 
 async function handleRejectExpense(request, params) {
   const user = ensureUser(request);
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), ["expenseId", "reason"]);
   return jsonResponse(await expenseService.rejectExpense({
     houseId: params.id,
     actorUserId: user.id,
-    expenseId: requireString(body.expenseId, "expenseId"),
-    reason: optionalString(body.reason),
+    expenseId: requireString(body.expenseId, "expenseId", { maxLength: 64 }),
+    reason: optionalString(body.reason, "reason", { maxLength: 500 }),
   }));
 }
 
 async function handleCreatePayment(request, params) {
   const user = ensureUser(request);
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), [
+    "expenseId",
+    "payerUserId",
+    "receiverUserId",
+    "amountMinor",
+    "amountPkr",
+    "currency",
+    "method",
+    "paymentDate",
+    "proofUrl",
+    "note",
+  ]);
   return jsonResponse(await paymentService.createPayment({
     houseId: params.id,
     actorUserId: user.id,
     payload: {
-      expenseId: optionalString(body.expenseId),
-      payerUserId: requireString(body.payerUserId, "payerUserId"),
-      receiverUserId: requireString(body.receiverUserId, "receiverUserId"),
+      expenseId: optionalString(body.expenseId, "expenseId", { maxLength: 64 }),
+      payerUserId: requireString(body.payerUserId, "payerUserId", { maxLength: 64 }),
+      receiverUserId: requireString(body.receiverUserId, "receiverUserId", { maxLength: 64 }),
       amountMinor: requireInteger(toMinorFromRequest(body), "amount", { min: 1 }),
-      currency: optionalString(body.currency) || "PKR",
+      currency: optionalString(body.currency, "currency", { maxLength: 3, pattern: /^[A-Z]{3}$/ }) || "PKR",
       method: requireOneOf(body.method || "cash", "method", ["cash", "bank", "wallet"]),
-      paymentDate: requireString(body.paymentDate || new Date().toISOString().slice(0, 10), "paymentDate"),
-      proofUrl: optionalString(body.proofUrl),
-      note: optionalString(body.note),
+      paymentDate: requireDateString(body.paymentDate || new Date().toISOString().slice(0, 10), "paymentDate"),
+      proofUrl: optionalString(body.proofUrl, "proofUrl", { maxLength: 255 }),
+      note: optionalString(body.note, "note", { maxLength: 500 }),
     },
   }), 201);
 }
 
 async function handleConfirmPayment(request, params) {
   const user = ensureUser(request);
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), ["paymentId"]);
   return jsonResponse(await paymentService.confirmPayment({
     houseId: params.id,
     actorUserId: user.id,
-    paymentId: requireString(body.paymentId, "paymentId"),
+    paymentId: requireString(body.paymentId, "paymentId", { maxLength: 64 }),
   }));
 }
 
 async function handleRejectPayment(request, params) {
   const user = ensureUser(request);
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), ["paymentId", "reason"]);
   return jsonResponse(await paymentService.rejectPayment({
     houseId: params.id,
     actorUserId: user.id,
-    paymentId: requireString(body.paymentId, "paymentId"),
-    reason: optionalString(body.reason),
+    paymentId: requireString(body.paymentId, "paymentId", { maxLength: 64 }),
+    reason: optionalString(body.reason, "reason", { maxLength: 500 }),
   }));
 }
 
 async function handleUpdatePayment(request, params) {
   const user = ensureUser(request);
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), [
+    "payerUserId",
+    "receiverUserId",
+    "amountMinor",
+    "amountPkr",
+    "paymentDate",
+    "method",
+    "note",
+  ]);
   return jsonResponse(await paymentService.updatePayment({
     houseId: params.id,
     actorUserId: user.id,
     paymentId: params.paymentId,
     payload: {
-      payerUserId: optionalString(body.payerUserId),
-      receiverUserId: optionalString(body.receiverUserId),
+      payerUserId: optionalString(body.payerUserId, "payerUserId", { maxLength: 64 }),
+      receiverUserId: optionalString(body.receiverUserId, "receiverUserId", { maxLength: 64 }),
       amountMinor: body.amountPkr !== undefined ? toMinorFromRequest(body) : body.amountMinor,
-      paymentDate: optionalString(body.paymentDate),
+      paymentDate: optionalDateString(body.paymentDate, "paymentDate"),
       method: body.method ? requireOneOf(body.method, "method", ["cash", "bank", "wallet"]) : undefined,
-      note: optionalString(body.note),
+      note: optionalString(body.note, "note", { maxLength: 500 }),
     },
   }));
 }
@@ -593,10 +694,10 @@ async function handleUpdatePayment(request, params) {
 async function handleCreateDispute(request, params) {
   const user = ensureUser(request);
   ensureHouseAccess(params.id, user.id);
-  const body = await readJson(request);
-  const expenseId = optionalString(body.expenseId);
-  const paymentId = optionalString(body.paymentId);
-  const reason = requireString(body.reason, "reason");
+  const body = assertAllowedFields(await readJson(request), ["expenseId", "paymentId", "reason"]);
+  const expenseId = optionalString(body.expenseId, "expenseId", { maxLength: 64 });
+  const paymentId = optionalString(body.paymentId, "paymentId", { maxLength: 64 });
+  const reason = requireString(body.reason, "reason", { maxLength: 500 });
   if (!expenseId && !paymentId) {
     throw new ApiError(400, "Select an expense or cash deposit to dispute");
   }
@@ -649,6 +750,7 @@ function handleListDisputes(request, params) {
 
 async function handleGenerateSettlement(request, params) {
   const user = ensureUser(request);
+  assertAllowedFields(await readJson(request), []);
   ensureHouseAccess(params.id, user.id);
   const house = store.houses.get(params.id);
   if (!house) throw new ApiError(404, "House not found");
@@ -738,16 +840,16 @@ function handleListPayments(request, params) {
 
 async function handleUploadUrl(request) {
   const user = ensureUser(request);
-  const body = await readJson(request);
+  const body = assertAllowedFields(await readJson(request), ["fileName", "bucket", "mimeType"]);
   const fileId = store.createId();
-  const fileName = body.fileName || `receipt-${fileId}`;
+  const fileName = optionalString(body.fileName, "fileName", { maxLength: 120 }) || `receipt-${fileId}`;
   const publicUrl = `https://storage.local/${fileId}/${encodeURIComponent(fileName)}`;
 
   const file = {
     id: fileId,
-    bucket: body.bucket || "receipts",
+    bucket: optionalString(body.bucket, "bucket", { maxLength: 60, pattern: /^[a-z0-9][a-z0-9._-]*$/ }) || "receipts",
     fileName,
-    mimeType: body.mimeType || "application/octet-stream",
+    mimeType: optionalString(body.mimeType, "mimeType", { maxLength: 80, pattern: /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i }) || "application/octet-stream",
     publicUrl,
     uploadStatus: "pending",
     createdBy: user.id,

@@ -590,19 +590,72 @@ input, select, textarea, button {
 }
 
 select {
+  appearance: none;
+  -webkit-appearance: none;
   color-scheme: dark;
-  background-color: #172238;
+  color: #edf5ff;
+  background:
+    linear-gradient(45deg, transparent 50%, #b8c9e3 50%) calc(100% - 20px) 50% / 7px 7px no-repeat,
+    linear-gradient(135deg, rgba(255,255,255,0.075), rgba(255,255,255,0.028)),
+    #101b2e;
+  border-color: rgba(148, 163, 184, 0.32);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 10px 24px rgba(0,0,0,0.12);
+  padding-right: 42px;
 }
 
 select option {
-  color: #e5eefb;
-  background-color: #172238;
+  color: #edf5ff;
+  background: #101b2e;
+  background-color: #101b2e;
 }
 
 select option:checked,
 select option:hover {
   color: #ffffff;
+  background: #256ed6;
   background-color: #256ed6;
+}
+
+select option:disabled {
+  color: #71829b;
+  background: #0c1627;
+  background-color: #0c1627;
+}
+
+select:focus {
+  outline: none;
+  color: #ffffff;
+  border-color: rgba(112, 166, 255, 0.72);
+  background:
+    linear-gradient(45deg, transparent 50%, #e4f0ff 50%) calc(100% - 20px) 50% / 7px 7px no-repeat,
+    linear-gradient(135deg, rgba(112,166,255,0.16), rgba(95,227,179,0.08)),
+    #0d192b;
+  box-shadow:
+    0 0 0 3px rgba(112, 166, 255, 0.12),
+    inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+#adminView select,
+#userView select,
+.settings-card select,
+#adminHousePanel select,
+.time-filter select {
+  background:
+    linear-gradient(45deg, transparent 50%, #b8c9e3 50%) calc(100% - 20px) 50% / 7px 7px no-repeat,
+    linear-gradient(180deg, rgba(255,255,255,0.085), rgba(255,255,255,0.025)),
+    #121e32;
+}
+
+#adminView select option,
+#userView select option,
+.settings-card select option,
+#adminHousePanel select option,
+.time-filter select option {
+  color: #edf5ff;
+  background: #0f1a2d;
+  background-color: #0f1a2d;
 }
 
 textarea { resize: vertical; }

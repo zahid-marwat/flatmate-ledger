@@ -341,6 +341,33 @@ function pkrToMinor(value) {
   return Math.round(Number(value || 0) * 100);
 }
 
+function evenPercentageSplits(userIds = []) {
+  const uniqueUserIds = [...new Set(userIds)].filter(Boolean);
+  if (!uniqueUserIds.length) return [];
+  const basePercent = Math.floor((100 / uniqueUserIds.length) * 100) / 100;
+  let allocated = 0;
+  return uniqueUserIds.map((userId, index) => {
+    const percent = index === uniqueUserIds.length - 1
+      ? Number((100 - allocated).toFixed(2))
+      : basePercent;
+    allocated += percent;
+    return { userId, percent };
+  });
+}
+
+function evenUnequalSplits(userIds = [], amountPkr = 0) {
+  const uniqueUserIds = [...new Set(userIds)].filter(Boolean);
+  if (!uniqueUserIds.length) return [];
+  const amountMinor = pkrToMinor(amountPkr);
+  const baseShare = Math.floor(amountMinor / uniqueUserIds.length);
+  let remainder = amountMinor - baseShare * uniqueUserIds.length;
+  return uniqueUserIds.map((userId) => {
+    const extra = remainder > 0 ? 1 : 0;
+    if (remainder > 0) remainder -= 1;
+    return { userId, amount: (baseShare + extra) / 100 };
+  });
+}
+
 function setToken(token) {
   state.token = token;
   if (token) {
@@ -520,6 +547,8 @@ function showAppPage(pageKey = state.currentPage || "dashboard") {
   document.querySelectorAll(".menu-item").forEach((item) => {
     item.classList.toggle("is-active", item.getAttribute("data-jump") === nextPage);
   });
+
+  syncOtherTitleFields();
 }
 
 function setAppMode() {
@@ -1295,12 +1324,12 @@ async function createExpense(form) {
   const splitType = form.splitType.value;
   const selectedUserIds = selectedSplitMemberIds(form);
   const percentageSplits = splitType === "percentage"
-    ? parseLines(form.percentageSplits.value, "percent")
+    ? (form.percentageSplits ? parseLines(form.percentageSplits.value, "percent") : evenPercentageSplits(selectedUserIds))
     : [];
   const unequalSplits = splitType === "unequal"
-    ? parseLines(form.unequalSplits.value, "amount")
+    ? (form.unequalSplits ? parseLines(form.unequalSplits.value, "amount") : evenUnequalSplits(selectedUserIds, form.amountPkr.value))
     : [];
-  const payerContributions = form.payerContributions.value
+  const payerContributions = form.payerContributions?.value
     ? parseLines(form.payerContributions.value, "amountMinor", { valueScale: "pkr" })
     : [];
 
@@ -1540,6 +1569,12 @@ function syncOtherTitleField(form) {
   customTitle.style.display = showCustomTitle ? "" : "none";
   customTitle.required = showCustomTitle;
   if (!showCustomTitle) customTitle.value = "";
+}
+
+function syncOtherTitleFields() {
+  document.querySelectorAll("form").forEach((form) => {
+    syncOtherTitleField(form);
+  });
 }
 
 function bindOtherTitleFields() {
