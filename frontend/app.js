@@ -511,11 +511,14 @@ function populateSettings() {
 }
 
 function showSettingsPage(pageKey = "profile") {
+  const hasPage = [...document.querySelectorAll("[data-settings-page]")]
+    .some((page) => page.getAttribute("data-settings-page") === pageKey);
+  const targetPage = hasPage ? pageKey : "profile";
   document.querySelectorAll("[data-settings-page]").forEach((page) => {
-    page.hidden = page.getAttribute("data-settings-page") !== pageKey;
+    page.hidden = page.getAttribute("data-settings-page") !== targetPage;
   });
   document.querySelectorAll("[data-settings-tab]").forEach((button) => {
-    button.classList.toggle("is-active", button.getAttribute("data-settings-tab") === pageKey);
+    button.classList.toggle("is-active", button.getAttribute("data-settings-tab") === targetPage);
   });
 }
 
@@ -1085,8 +1088,9 @@ function renderPayments(payments = []) {
 
 function renderDisputes(disputes = []) {
   const sortedDisputes = newestFirst(disputes, ["createdAt", "resolvedAt", "created_at", "resolved_at"]);
-  els.disputeList.innerHTML = sortedDisputes.length
-    ? sortedDisputes.map((dispute) => {
+  const openDisputes = sortedDisputes.filter((dispute) => dispute.status !== "resolved");
+  const resolvedDisputes = sortedDisputes.filter((dispute) => dispute.status === "resolved");
+  const renderDisputeCards = (items, { resolved = false } = {}) => items.map((dispute) => {
         const expense = dispute.expense || null;
         const payment = dispute.payment || null;
         const openedBy = dispute.openedByUser?.fullName || dispute.openedByUser?.contact || "Member";
@@ -1106,15 +1110,16 @@ function renderDisputes(disputes = []) {
           `;
         }).join("");
         return `
-          <details class="ledger-item dispute-editor" data-dispute-editor data-expense-id="${escapeAttr(expense?.id || "")}" data-payment-id="${escapeAttr(payment?.id || "")}">
+          <details class="ledger-item dispute-editor ${resolved ? "dispute-resolved" : ""}" data-dispute-editor data-dispute-id="${escapeAttr(dispute.id || "")}" data-expense-id="${escapeAttr(expense?.id || "")}" data-payment-id="${escapeAttr(payment?.id || "")}">
             <summary class="ledger-item-top">
               <div>
                 <strong>${escapeHtml(dispute.reason)}</strong>
                 <div class="list-item-meta">${escapeHtml(dispute.status)} - ${escapeHtml(title)} - opened by ${escapeHtml(openedBy)}</div>
+                ${resolved ? `<div class="list-item-meta">Resolved ${escapeHtml(dispute.resolvedAt || "")}${dispute.resolutionNote ? ` - ${escapeHtml(dispute.resolutionNote)}` : ""}</div>` : ""}
               </div>
               <span class="status-pill">${escapeHtml(dispute.status)}</span>
             </summary>
-            ${isManagement() && expense ? `
+            ${isManagement() && expense && !resolved ? `
               <div class="dispute-edit-grid">
                 <input name="amountPkr" value="${escapeAttr((expense.amountMinor || 0) / 100)}" placeholder="Amount in PKR" />
                 <select name="splitType">
@@ -1128,7 +1133,7 @@ function renderDisputes(disputes = []) {
                 <button type="button" data-update-dispute-expense>Update Disputed Expense</button>
               </div>
             ` : ""}
-            ${isManagement() && payment ? `
+            ${isManagement() && payment && !resolved ? `
               <div class="dispute-edit-grid">
                 <select name="payerUserId">${memberOptions}</select>
                 <input name="amountPkr" value="${escapeAttr((payment.amountMinor || 0) / 100)}" placeholder="Amount in PKR" />
@@ -1137,7 +1142,21 @@ function renderDisputes(disputes = []) {
             ` : ""}
           </details>
         `;
-      }).join("")
+      }).join("");
+
+  els.disputeList.innerHTML = sortedDisputes.length
+    ? `
+      <div class="dispute-section-heading">
+        <strong>Open disputes</strong>
+        <span>${openDisputes.length} unresolved</span>
+      </div>
+      ${openDisputes.length ? renderDisputeCards(openDisputes) : `<div class="ledger-item">No open disputes.</div>`}
+      <div class="dispute-section-heading resolved-heading">
+        <strong>Resolved disputes</strong>
+        <span>${resolvedDisputes.length} resolved</span>
+      </div>
+      ${resolvedDisputes.length ? renderDisputeCards(resolvedDisputes, { resolved: true }) : `<div class="ledger-item">No disputes resolved yet.</div>`}
+    `
     : `<div class="ledger-item">No disputes open.</div>`;
 
   els.disputeList.querySelectorAll("[data-expense-id]").forEach((editor) => {
@@ -1508,7 +1527,11 @@ async function updateDisputedExpense(editor) {
       participantUserIds: selectedUserIds,
     },
   });
-  showToast("Disputed expense updated");
+  await api(`/houses/${state.houseId}/disputes/${editor.dataset.disputeId}/resolve`, {
+    method: "POST",
+    body: { resolutionNote: "Manager updated the disputed expense" },
+  });
+  showToast("Disputed expense updated and resolved");
   await refreshHouse();
 }
 
@@ -1520,7 +1543,11 @@ async function updateDisputedPayment(editor) {
       amountPkr: Number(editor.querySelector('[name="amountPkr"]').value),
     },
   });
-  showToast("Disputed deposit updated");
+  await api(`/houses/${state.houseId}/disputes/${editor.dataset.disputeId}/resolve`, {
+    method: "POST",
+    body: { resolutionNote: "Manager updated the disputed deposit" },
+  });
+  showToast("Disputed deposit updated and resolved");
   await refreshHouse();
 }
 

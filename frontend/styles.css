@@ -1260,6 +1260,33 @@ button:hover {
   border-top: 1px solid rgba(255,255,255,0.08);
 }
 
+.dispute-section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+  padding: 6px 4px 0;
+  color: var(--text);
+}
+
+.dispute-section-heading span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.resolved-heading {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.dispute-resolved {
+  opacity: 0.78;
+  background: rgba(95, 227, 179, 0.045);
+  border-color: rgba(95, 227, 179, 0.12);
+}
+
 .dispute-check-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }

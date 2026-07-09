@@ -748,6 +748,36 @@ function handleListDisputes(request, params) {
   return jsonResponse({ disputes });
 }
 
+async function handleResolveDispute(request, params) {
+  const user = ensureUser(request);
+  ensureHouseAccess(params.id, user.id);
+  if (!isManagementRole(getHouseRole(params.id, user.id))) {
+    throw new ApiError(403, "Only an admin or manager can resolve disputes");
+  }
+
+  const body = assertAllowedFields(await readJson(request), ["resolutionNote"]);
+  const dispute = store.disputes.get(params.disputeId);
+  if (!dispute || dispute.houseId !== params.id) {
+    throw new ApiError(404, "Dispute not found in this group");
+  }
+
+  const updated = {
+    ...dispute,
+    status: "resolved",
+    resolutionNote: optionalString(body.resolutionNote, "resolutionNote", { maxLength: 500 }) || "Updated by manager",
+    resolvedBy: user.id,
+    resolvedAt: new Date().toISOString(),
+  };
+  store.disputes.set(params.disputeId, updated);
+  await persistence.saveDispute(updated);
+  logActivity(params.id, user.id, "dispute.resolved", "dispute", params.disputeId, {
+    expenseId: updated.expenseId,
+    paymentId: updated.paymentId,
+    resolutionNote: updated.resolutionNote,
+  });
+  return jsonResponse(updated);
+}
+
 async function handleGenerateSettlement(request, params) {
   const user = ensureUser(request);
   assertAllowedFields(await readJson(request), []);
@@ -902,6 +932,7 @@ const routes = [
   ["POST", "/houses/:id/payments/reject", handleRejectPayment],
   ["POST", "/houses/:id/disputes", handleCreateDispute],
   ["GET", "/houses/:id/disputes", handleListDisputes],
+  ["POST", "/houses/:id/disputes/:disputeId/resolve", handleResolveDispute],
   ["POST", "/houses/:id/settlements/generate", handleGenerateSettlement],
   ["GET", "/houses/:id/settlements", handleListSettlements],
   ["GET", "/houses/:id/balances", handleBalances],
