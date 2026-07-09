@@ -48,6 +48,7 @@ create table if not exists public.users (
   avatar_url text,
   default_currency text not null default 'PKR',
   locale text not null default 'en-PK',
+  app_role text not null default 'user' check (app_role in ('user', 'admin')),
   password_hash text,
   password_salt text,
   password_algorithm text,
@@ -399,8 +400,8 @@ alter table public.shopping_list_items enable row level security;
 do $$
 begin
   create policy "users_select_own" on public.users for select using (auth.uid() = id);
-  create policy "users_insert_own" on public.users for insert with check (auth.uid() = id);
-  create policy "users_update_own" on public.users for update using (auth.uid() = id) with check (auth.uid() = id);
+  create policy "users_insert_own" on public.users for insert with check (auth.uid() = id and app_role = 'user');
+  create policy "users_update_own" on public.users for update using (auth.uid() = id and app_role = 'user') with check (auth.uid() = id and app_role = 'user');
 exception when duplicate_object then null;
 end $$;
 

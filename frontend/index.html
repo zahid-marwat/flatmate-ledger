@@ -153,6 +153,17 @@
               <h3>Group Dashboard</h3>
               <span>Visible to admin, manager, and flatmates</span>
             </div>
+            <div class="time-filter" aria-label="Dashboard time window filter">
+              <select id="dashboardTimeWindow">
+                <option value="all">All time</option>
+                <option value="this_month">This month</option>
+                <option value="last_month">Last month</option>
+                <option value="last_30">Last 30 days</option>
+                <option value="custom">Custom</option>
+              </select>
+              <input id="dashboardStartDate" type="date" hidden />
+              <input id="dashboardEndDate" type="date" hidden />
+            </div>
             <div id="dashboardSummaryCards" class="summary-grid"></div>
           </article>
 
@@ -308,7 +319,7 @@
                 <option value="SaudaSalf">SaudaSalf</option>
                 <option value="Other">Other</option>
               </select>
-              <input name="customTitle" placeholder="Other title" />
+              <input name="customTitle" placeholder="Other title" hidden />
               <input name="amountPkr" placeholder="Amount in PKR" />
               <input name="expenseDate" type="date" />
               <select name="splitType">
@@ -329,7 +340,6 @@
               <textarea name="percentageSplits" rows="3" placeholder="For percentage split, e.g. zahid=50&#10;asfandyar=50"></textarea>
               <textarea name="unequalSplits" rows="3" placeholder="For unequal split, amounts in PKR, e.g. zahid=1200"></textarea>
               <textarea name="note" rows="3" placeholder="Note"></textarea>
-              <input name="receiptUrl" placeholder="Receipt URL" />
               <button type="submit">Create Approved Expense</button>
             </form>
           </article>
@@ -349,7 +359,7 @@
                 <option value="SaudaSalf">SaudaSalf</option>
                 <option value="Other">Other</option>
               </select>
-              <input name="customTitle" placeholder="Other title" />
+              <input name="customTitle" placeholder="Other title" hidden />
               <input name="amountPkr" placeholder="New amount in PKR" />
               <select name="splitType">
                 <option value="">Keep split</option>
@@ -446,11 +456,10 @@
                 <option value="SaudaSalf">SaudaSalf</option>
                 <option value="Other">Other</option>
               </select>
-              <input name="customTitle" placeholder="Other title" />
+              <input name="customTitle" placeholder="Other title" hidden />
               <input name="amountPkr" placeholder="Amount in PKR" />
               <input name="expenseDate" type="date" />
               <textarea name="note" rows="3" placeholder="Note"></textarea>
-              <input name="receiptUrl" placeholder="Receipt URL" />
               <button type="submit">Submit for Approval</button>
             </form>
           </article>
@@ -462,7 +471,6 @@
             </div>
             <form id="userPaymentForm" class="stack compact">
               <select id="userPaymentGroupSelect" name="groupId"></select>
-              <select id="userPaymentPayerUserId" name="payerUserId"></select>
               <input name="amountPkr" placeholder="Amount in PKR" />
               <button type="submit">Submit Deposit</button>
             </form>

@@ -7,6 +7,7 @@ import { createAuthService } from "./services/auth.js";
 import { createHouseService } from "./services/houses.js";
 import { createExpenseService } from "./services/expenses.js";
 import { createPaymentService } from "./services/payments.js";
+import { isGlobalAdminUser, isGlobalAdminUserId as checkGlobalAdminUserId } from "./admin.js";
 import { simplifyDebts } from "../domain/debt.js";
 import {
   optionalString,
@@ -39,6 +40,12 @@ const houseService = createHouseService(store, logActivity, persistence);
 const expenseService = createExpenseService(store, logActivity, persistence);
 const paymentService = createPaymentService(store, logActivity, expenseService, persistence);
 
+function sessionTtlMs() {
+  const configuredSeconds = Number(process.env.SESSION_TTL_SECONDS || 3600);
+  const safeSeconds = Number.isFinite(configuredSeconds) && configuredSeconds > 0 ? configuredSeconds : 3600;
+  return safeSeconds * 1000;
+}
+
 function getSessionUser(request) {
   const token = readBearerToken(request);
   if (!token) return null;
@@ -46,7 +53,24 @@ function getSessionUser(request) {
   const session = store.sessions.get(token);
   if (!session) return null;
 
-  return store.users.get(session.userId || session.user_id) || null;
+  const now = Date.now();
+  const expiresAt = session.expiresAt || (session.expires_at ? new Date(session.expires_at).getTime() : null);
+  if (!expiresAt || expiresAt <= now) {
+    store.sessions.delete(token);
+    void persistence.deleteSession(token);
+    return null;
+  }
+
+  const userId = session.userId || session.user_id;
+  const nextExpiresAt = now + sessionTtlMs();
+  store.sessions.set(token, {
+    ...session,
+    userId,
+    expiresAt: nextExpiresAt,
+  });
+  void persistence.saveSession(token, userId, nextExpiresAt);
+
+  return store.users.get(userId) || null;
 }
 
 function parseBoolean(value, fallback = false) {
@@ -54,6 +78,35 @@ function parseBoolean(value, fallback = false) {
   if (typeof value === "boolean") return value;
   if (typeof value === "string") return ["true", "1", "yes"].includes(value.toLowerCase());
   return fallback;
+}
+
+function sanitizeUser(user) {
+  if (!user) return null;
+  const {
+    passwordHash,
+    passwordSalt,
+    passwordAlgorithm,
+    password_hash,
+    password_salt,
+    password_algorithm,
+    ...safeUser
+  } = user;
+  void passwordHash;
+  void passwordSalt;
+  void passwordAlgorithm;
+  void password_hash;
+  void password_salt;
+  void password_algorithm;
+  return safeUser;
+}
+
+function sanitizeUserPayload(payload) {
+  if (!payload || typeof payload !== "object") return payload;
+  if (!("user" in payload)) return payload;
+  return {
+    ...payload,
+    user: sanitizeUser(payload.user),
+  };
 }
 
 function ensureUser(request) {
@@ -65,15 +118,11 @@ function ensureUser(request) {
 }
 
 function isGlobalAdmin(user) {
-  const adminContacts = String(process.env.GLOBAL_ADMIN_CONTACTS || "zahid-admin")
-    .split(",")
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
-  return Boolean(user?.contact && adminContacts.includes(String(user.contact).toLowerCase()));
+  return isGlobalAdminUser(user);
 }
 
 function isGlobalAdminUserId(userId) {
-  return isGlobalAdmin(store.users.get(userId));
+  return checkGlobalAdminUserId(store, userId);
 }
 
 function ensureHouseAccess(houseId, userId) {
@@ -168,11 +217,11 @@ async function handleAuthRequest(request) {
 
 async function handleAuthVerify(request) {
   const body = await readJson(request);
-  return jsonResponse(await authService.verifyOtp({
+  return jsonResponse(sanitizeUserPayload(await authService.verifyOtp({
     contact: requireString(body.contact, "contact"),
     code: requireString(String(body.code ?? ""), "code"),
     fullName: optionalString(body.fullName),
-  }));
+  })));
 }
 
 async function handleCreatePasswordUser(request) {
@@ -249,36 +298,45 @@ async function handleCreatePasswordUser(request) {
     }
   }
 
-  return jsonResponse(result, 201);
+  return jsonResponse(sanitizeUserPayload(result), 201);
 }
 
 async function handlePasswordLogin(request) {
   const body = await readJson(request);
-  return jsonResponse(await authService.loginWithPassword({
+  return jsonResponse(sanitizeUserPayload(await authService.loginWithPassword({
     contact: requireString(body.contact, "contact"),
     password: requireString(body.password, "password"),
-  }));
+  })));
+}
+
+async function handleLogout(request) {
+  const token = readBearerToken(request);
+  if (token) {
+    store.sessions.delete(token);
+    await persistence.deleteSession(token);
+  }
+  return jsonResponse({ ok: true });
 }
 
 async function handleChangePassword(request) {
   const user = ensureUser(request);
   const body = await readJson(request);
-  return jsonResponse(await authService.changePassword({
+  return jsonResponse(sanitizeUserPayload(await authService.changePassword({
     userId: user.id,
     currentPassword: requireString(body.currentPassword, "currentPassword"),
     newPassword: requireString(body.newPassword, "newPassword"),
-  }));
+  })));
 }
 
 async function handleUpdateProfile(request) {
   const user = ensureUser(request);
   const body = await readJson(request);
-  return jsonResponse(await authService.updateProfile({
+  return jsonResponse(sanitizeUserPayload(await authService.updateProfile({
     userId: user.id,
     fullName: optionalString(body.fullName),
     contact: optionalString(body.contact),
     avatarUrl: body.avatarUrl === undefined ? undefined : optionalString(body.avatarUrl),
-  }));
+  })));
 }
 
 function handleMe(request) {
@@ -301,7 +359,7 @@ function handleMe(request) {
           house: store.houses.get(member.houseId) || null,
         }));
 
-  return jsonResponse({ user, memberships, role: globalAdmin ? "admin" : memberships[0]?.role || null, isGlobalAdmin: globalAdmin });
+  return jsonResponse({ user: sanitizeUser(user), memberships, role: globalAdmin ? "admin" : memberships[0]?.role || null, isGlobalAdmin: globalAdmin });
 }
 
 async function handleCreateHouse(request) {
@@ -336,7 +394,7 @@ function handleListMembers(request, params) {
   ensureHouseAccess(params.id, user.id);
   const members = houseService.listMembers(params.id).map((member) => ({
     ...member,
-    user: store.users.get(member.userId) || null,
+    user: sanitizeUser(store.users.get(member.userId)),
   }));
   return jsonResponse({ members });
 }
@@ -344,7 +402,7 @@ function handleListMembers(request, params) {
 async function handleAddMember(request, params) {
   const user = ensureUser(request);
   const body = await readJson(request);
-  return jsonResponse(await houseService.addMember({
+  const result = await houseService.addMember({
     houseId: params.id,
     actorUserId: user.id,
     user: {
@@ -361,7 +419,8 @@ async function handleAddMember(request, params) {
     },
     role: requireOneOf(body.role || "flatmate", "role", ["flatmate", "manager", "viewer"]),
     actorIsGlobalAdmin: isGlobalAdmin(user),
-  }), 201);
+  });
+  return jsonResponse(sanitizeUserPayload(result), 201);
 }
 
 async function handleUpdateMember(request, params) {
@@ -581,7 +640,7 @@ function handleListDisputes(request, params) {
     .map((item) => ({
       ...item,
       houseId: item.houseId || store.expenses.get(item.expenseId)?.houseId || store.payments.get(item.paymentId)?.houseId || null,
-      openedByUser: store.users.get(item.openedBy) || null,
+      openedByUser: sanitizeUser(store.users.get(item.openedBy)),
       expense: store.expenses.get(item.expenseId) || null,
       payment: store.payments.get(item.paymentId) || null,
     }));
@@ -658,7 +717,7 @@ function handleActivityLog(request, params) {
         id: entry.id,
         houseId: entry.houseId || entry.house_id,
         actorUserId,
-        actor: actorUserId ? store.users.get(actorUserId) || null : null,
+        actor: actorUserId ? sanitizeUser(store.users.get(actorUserId)) : null,
         actionType: entry.actionType || entry.action_type,
         entityType: entry.entityType || entry.entity_type,
         entityId: entry.entityId || entry.entity_id,
@@ -717,6 +776,7 @@ const routes = [
   ["GET", "/health", handleHealth],
   ["POST", "/admin/users", handleCreatePasswordUser],
   ["POST", "/auth/login", handlePasswordLogin],
+  ["POST", "/auth/logout", handleLogout],
   ["POST", "/me/password", handleChangePassword],
   ["PATCH", "/me/profile", handleUpdateProfile],
   ["POST", "/auth/request-otp", handleAuthRequest],

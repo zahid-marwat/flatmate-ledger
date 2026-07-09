@@ -1,22 +1,14 @@
 import { ApiError } from "../errors.js";
 import { createId } from "../id.js";
+import { isGlobalAdminUserId } from "../admin.js";
 
 function isAdmin(member) {
   return member?.role === "admin" && member.status === "active";
 }
 
 export function createHouseService(store, logActivity, persistence) {
-  function isGlobalAdminUserId(userId) {
-    const user = store.users.get(userId);
-    const adminContacts = String(process.env.GLOBAL_ADMIN_CONTACTS || "zahid-admin")
-      .split(",")
-      .map((item) => item.trim().toLowerCase())
-      .filter(Boolean);
-    return user?.contact && adminContacts.includes(String(user.contact).toLowerCase());
-  }
-
   function assertHouseMember(houseId, userId) {
-    if (isGlobalAdminUserId(userId)) {
+    if (isGlobalAdminUserId(store, userId)) {
       return { userId, role: "admin", status: "active", isGlobalAdmin: true };
     }
     const member = store.houseMembers.get(`${houseId}:${userId}`);
@@ -80,7 +72,7 @@ export function createHouseService(store, logActivity, persistence) {
     },
 
     listMembers(houseId) {
-      return [...store.houseMembers.values()].filter((member) => member.houseId === houseId && !isGlobalAdminUserId(member.userId));
+      return [...store.houseMembers.values()].filter((member) => member.houseId === houseId && !isGlobalAdminUserId(store, member.userId));
     },
 
     async addMember({ houseId, actorUserId, user, role = "flatmate", actorIsGlobalAdmin = false }) {
@@ -113,6 +105,7 @@ export function createHouseService(store, logActivity, persistence) {
           avatarUrl: user.avatarUrl || null,
           defaultCurrency: user.defaultCurrency || "PKR",
           locale: user.locale || "en-PK",
+          appRole: user.appRole || "user",
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };

@@ -15,6 +15,7 @@ function mapUser(row) {
     avatarUrl: row.avatar_url || null,
     defaultCurrency: row.default_currency || "PKR",
     locale: row.locale || "en-PK",
+    appRole: row.app_role || "user",
     passwordHash: row.password_hash || null,
     passwordSalt: row.password_salt || null,
     passwordAlgorithm: row.password_algorithm || null,
@@ -219,7 +220,11 @@ export function createPersistence(store) {
     }
     for (const payment of rows(payments).map(mapPayment)) store.payments.set(payment.id, payment);
     for (const entry of rows(cashLedger).map(mapCashEntry)) store.cashLedger.set(entry.id, entry);
-    for (const session of rows(sessions)) store.sessions.set(session.token, { userId: session.user_id, createdAt: session.created_at });
+    for (const session of rows(sessions)) store.sessions.set(session.token, {
+      userId: session.user_id,
+      createdAt: session.created_at,
+      expiresAt: session.expires_at ? new Date(session.expires_at).getTime() : null,
+    });
     for (const otp of rows(otps)) store.otps.set(otp.contact, { contact: otp.contact, code: otp.code, expiresAt: new Date(otp.expires_at).getTime(), fullName: otp.full_name || null });
     for (const item of rows(activityLog)) store.activityLog.push(item);
     for (const file of rows(files)) store.files.set(file.id, file);
@@ -262,6 +267,7 @@ export function createPersistence(store) {
         avatar_url: user.avatarUrl,
         default_currency: user.defaultCurrency,
         locale: user.locale,
+        app_role: user.appRole || "user",
         password_hash: user.passwordHash || null,
         password_salt: user.passwordSalt || null,
         password_algorithm: user.passwordAlgorithm || null,
@@ -278,13 +284,22 @@ export function createPersistence(store) {
         expires_at: new Date(otp.expiresAt).toISOString(),
       }]);
     },
-    async saveSession(sessionToken, userId) {
+    async saveSession(sessionToken, userId, expiresAt = null) {
       if (!client.enabled) return;
-      await client.insert("sessions", [{
+      await client.upsert("sessions", [{
         token: sessionToken,
         user_id: userId,
         created_at: new Date().toISOString(),
-      }]);
+        expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+      }], { onConflict: "token" });
+    },
+    async deleteSession(sessionToken) {
+      if (!client.enabled) return;
+      await client.remove("sessions", { token: sessionToken });
+    },
+    async deleteUserSessions(userId) {
+      if (!client.enabled) return;
+      await client.remove("sessions", { user_id: userId });
     },
     async saveHouse(house) {
       if (!client.enabled) return;

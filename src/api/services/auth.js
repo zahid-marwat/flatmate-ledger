@@ -23,6 +23,24 @@ function authMode() {
     : "local";
 }
 
+function sessionTtlMs() {
+  const configuredSeconds = Number(process.env.SESSION_TTL_SECONDS || 3600);
+  const safeSeconds = Number.isFinite(configuredSeconds) && configuredSeconds > 0 ? configuredSeconds : 3600;
+  return safeSeconds * 1000;
+}
+
+async function createSession(store, persistence, userId, token = createId()) {
+  const now = Date.now();
+  const expiresAt = now + sessionTtlMs();
+  store.sessions.set(token, {
+    userId,
+    createdAt: now,
+    expiresAt,
+  });
+  await persistence.saveSession(token, userId, expiresAt);
+  return token;
+}
+
 function isEmail(contact) {
   return contact.includes("@");
 }
@@ -93,6 +111,7 @@ export function createAuthService(store, persistence) {
         avatarUrl: existingUser?.avatarUrl || null,
         defaultCurrency: existingUser?.defaultCurrency || "PKR",
         locale: existingUser?.locale || "en-PK",
+        appRole: existingUser?.appRole || (role === "admin" ? "admin" : "user"),
         passwordHash: passwordRecord.hash,
         passwordSalt: passwordRecord.salt,
         passwordAlgorithm: passwordRecord.algorithm,
@@ -114,12 +133,7 @@ export function createAuthService(store, persistence) {
         throw new ApiError(401, "Invalid login or password");
       }
 
-      const sessionToken = createId();
-      store.sessions.set(sessionToken, {
-        userId: user.id,
-        createdAt: Date.now(),
-      });
-      await persistence.saveSession(sessionToken, user.id);
+      const sessionToken = await createSession(store, persistence, user.id);
 
       return {
         token: sessionToken,
@@ -148,6 +162,12 @@ export function createAuthService(store, persistence) {
       store.users.set(updated.id, updated);
       if (updated.contact) store.usersByContact.set(updated.contact, updated);
       await persistence.saveUser(updated);
+      for (const [token, session] of store.sessions.entries()) {
+        if ((session.userId || session.user_id) === userId) {
+          store.sessions.delete(token);
+        }
+      }
+      await persistence.deleteUserSessions(userId);
       return { user: sanitizeUser(updated) };
     },
 
@@ -237,6 +257,7 @@ export function createAuthService(store, persistence) {
           avatarUrl: authUser.user_metadata?.avatar_url || null,
           defaultCurrency: "PKR",
           locale: "en-PK",
+          appRole: "user",
           createdAt: authUser.created_at || new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -245,11 +266,7 @@ export function createAuthService(store, persistence) {
         store.usersByContact.set(normalized, user);
         await persistence.saveUser(user);
 
-        store.sessions.set(accessToken, {
-          userId: user.id,
-          createdAt: Date.now(),
-        });
-        await persistence.saveSession(accessToken, user.id);
+        await createSession(store, persistence, user.id, accessToken);
 
         return {
           token: accessToken,
@@ -282,6 +299,7 @@ export function createAuthService(store, persistence) {
           avatarUrl: null,
           defaultCurrency: "PKR",
           locale: "en-PK",
+          appRole: "user",
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -290,12 +308,7 @@ export function createAuthService(store, persistence) {
         await persistence.saveUser(user);
       }
 
-      const sessionToken = createId();
-      store.sessions.set(sessionToken, {
-        userId: user.id,
-        createdAt: Date.now(),
-      });
-      await persistence.saveSession(sessionToken, user.id);
+      const sessionToken = await createSession(store, persistence, user.id);
       store.otps.delete(normalized);
 
       return {

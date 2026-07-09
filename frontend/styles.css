@@ -582,6 +582,22 @@ input, select, textarea, button {
   transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, filter 160ms ease;
 }
 
+select {
+  color-scheme: dark;
+  background-color: #172238;
+}
+
+select option {
+  color: #e5eefb;
+  background-color: #172238;
+}
+
+select option:checked,
+select option:hover {
+  color: #ffffff;
+  background-color: #256ed6;
+}
+
 textarea { resize: vertical; }
 
 button {
@@ -917,6 +933,21 @@ button:hover {
   gap: 12px;
 }
 
+.time-filter {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) repeat(2, minmax(150px, 180px));
+  gap: 10px;
+  align-items: center;
+  margin: 0 0 14px;
+}
+
+.time-filter select,
+.time-filter input {
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 14px;
+}
+
 .summary-card {
   padding: 16px;
   border-radius: 18px;
@@ -970,37 +1001,6 @@ button:hover {
 
 .avatar-card b {
   font-weight: 900;
-}
-
-.avatar-card .member-relation {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  width: fit-content;
-  margin-top: 5px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 800;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.avatar-card .member-relation.balance-credit {
-  color: #65f0be;
-  background: rgba(101, 240, 190, 0.12);
-  border: 1px solid rgba(101, 240, 190, 0.2);
-}
-
-.avatar-card .member-relation.balance-debt {
-  color: #ff8b8b;
-  background: rgba(255, 123, 123, 0.12);
-  border: 1px solid rgba(255, 123, 123, 0.2);
-}
-
-.avatar-card .member-relation.balance-neutral {
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .avatar {
@@ -1306,7 +1306,7 @@ button:hover {
 
 .member-profile-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
   gap: 8px;
 }
 
@@ -1327,6 +1327,11 @@ button:hover {
   display: block;
   margin-top: 4px;
   font-size: 13px;
+}
+
+.member-profile-relation {
+  background: rgba(95, 227, 179, 0.1) !important;
+  border-color: rgba(95, 227, 179, 0.22) !important;
 }
 
 .member-profile-section {
@@ -1385,6 +1390,7 @@ button:hover {
   }
 
   .grid, .summary-grid, .hero-metrics, .avatar-grid, .check-grid { grid-template-columns: 1fr; }
+  .time-filter { grid-template-columns: 1fr; }
   .settings-layout { grid-template-columns: 1fr; }
   .settings-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .panel, .hero, .top-panel, .settings-card {

@@ -24,6 +24,10 @@ const state = {
   balances: [],
   history: [],
   currentHouse: null,
+  summary: null,
+  dashboardTimeWindow: localStorage.getItem("flatmateLedgerDashboardTimeWindow") || "all",
+  dashboardStartDate: localStorage.getItem("flatmateLedgerDashboardStartDate") || "",
+  dashboardEndDate: localStorage.getItem("flatmateLedgerDashboardEndDate") || "",
   sidebarCollapsed: localStorage.getItem("flatmateLedgerSidebarCollapsed") === "true",
   currentPage: localStorage.getItem("flatmateLedgerPage") || "dashboard",
   isGlobalAdmin: false,
@@ -69,6 +73,9 @@ const els = {
   pendingMetric: $("#pendingMetric"),
   cashMetric: $("#cashMetric"),
   dashboardSummaryCards: $("#dashboardSummaryCards"),
+  dashboardTimeWindow: $("#dashboardTimeWindow"),
+  dashboardStartDate: $("#dashboardStartDate"),
+  dashboardEndDate: $("#dashboardEndDate"),
   dashboardRoster: $("#dashboardRoster"),
   historyList: $("#historyList"),
   historyCount: $("#historyCount"),
@@ -91,7 +98,6 @@ const els = {
   paymentGroupSelect: $("#paymentGroupSelect"),
   paymentPayerUserId: $("#paymentPayerUserId"),
   userPaymentGroupSelect: $("#userPaymentGroupSelect"),
-  userPaymentPayerUserId: $("#userPaymentPayerUserId"),
   editExpenseId: $("#editExpenseId"),
   disputeExpenseId: $("#disputeExpenseId"),
   userDisputeExpenseId: $("#userDisputeExpenseId"),
@@ -128,6 +134,35 @@ function balanceClass(minor) {
   return "balance-neutral";
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replaceAll("`", "&#96;");
+}
+
+function safeImageUrl(value) {
+  const url = String(value || "").trim();
+  if (url.startsWith("/avatars/")) return url;
+  if (!/^https?:\/\//i.test(url)) return "";
+  try {
+    const parsed = new URL(url);
+    return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function optionHtml(value, label, { selected = false } = {}) {
+  return `<option value="${escapeAttr(value)}" ${selected ? "selected" : ""}>${escapeHtml(label)}</option>`;
+}
+
 function balanceByUserId(userId) {
   const balances = state.currentHouse?.balances?.length ? state.currentHouse.balances : state.balances;
   const balance = balances.find((entry) => (entry.userId || entry.user_id) === userId);
@@ -153,7 +188,7 @@ function relationToCurrentUser(memberUserId) {
 
   if (currentBalance < 0 && memberBalance > 0) {
     return {
-      label: `You owe ${memberNameById(memberUserId)}`,
+      label: "You owe",
       amountMinor: -Math.min(Math.abs(currentBalance), memberBalance),
       className: "balance-debt",
     };
@@ -161,7 +196,7 @@ function relationToCurrentUser(memberUserId) {
 
   if (currentBalance > 0 && memberBalance < 0) {
     return {
-      label: `${memberNameById(memberUserId)} owes you`,
+      label: "Owes you",
       amountMinor: Math.min(currentBalance, Math.abs(memberBalance)),
       className: "balance-credit",
     };
@@ -256,6 +291,54 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function localDate(value) {
+  if (!value) return null;
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function dateOnly(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function monthBounds(offset = 0) {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0);
+  return { start: dateOnly(start), end: dateOnly(end) };
+}
+
+function dashboardWindowBounds() {
+  const key = state.dashboardTimeWindow;
+  if (key === "this_month") return monthBounds(0);
+  if (key === "last_month") return monthBounds(-1);
+  if (key === "last_30") {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(end.getDate() - 29);
+    return { start: dateOnly(start), end: dateOnly(end) };
+  }
+  if (key === "custom") {
+    return {
+      start: state.dashboardStartDate || "",
+      end: state.dashboardEndDate || "",
+    };
+  }
+  return { start: "", end: "" };
+}
+
+function isWithinDashboardWindow(value) {
+  const { start, end } = dashboardWindowBounds();
+  if (!start && !end) return true;
+  const date = localDate(value);
+  if (!date) return false;
+  const startDate = localDate(start);
+  const endDate = localDate(end);
+  if (startDate && date < startDate) return false;
+  if (endDate && date > endDate) return false;
+  return true;
+}
+
 function pkrToMinor(value) {
   return Math.round(Number(value || 0) * 100);
 }
@@ -325,6 +408,30 @@ function recordUserActivity() {
   touchSession();
 }
 
+function syncDashboardTimeFilter() {
+  if (!els.dashboardTimeWindow) return;
+  els.dashboardTimeWindow.value = state.dashboardTimeWindow;
+  if (els.dashboardStartDate) {
+    els.dashboardStartDate.value = state.dashboardStartDate;
+    els.dashboardStartDate.hidden = state.dashboardTimeWindow !== "custom";
+  }
+  if (els.dashboardEndDate) {
+    els.dashboardEndDate.value = state.dashboardEndDate;
+    els.dashboardEndDate.hidden = state.dashboardTimeWindow !== "custom";
+  }
+}
+
+function updateDashboardTimeFilter() {
+  state.dashboardTimeWindow = els.dashboardTimeWindow?.value || "all";
+  state.dashboardStartDate = els.dashboardStartDate?.value || "";
+  state.dashboardEndDate = els.dashboardEndDate?.value || "";
+  localStorage.setItem("flatmateLedgerDashboardTimeWindow", state.dashboardTimeWindow);
+  localStorage.setItem("flatmateLedgerDashboardStartDate", state.dashboardStartDate);
+  localStorage.setItem("flatmateLedgerDashboardEndDate", state.dashboardEndDate);
+  syncDashboardTimeFilter();
+  renderSummary();
+}
+
 function setHouseId(houseId) {
   state.houseId = houseId || "";
   if (houseId) {
@@ -359,8 +466,8 @@ function renderSettingsAvatarPreview(avatarUrl = state.user?.avatarUrl || null) 
   els.settingsAvatarPreview.innerHTML = `
     ${avatarMarkup({ ...currentUserMember(), user: previewUser })}
     <div>
-      <strong>${state.user?.fullName || "Not signed in"}</strong>
-      <span>${avatarUrl || "Default avatar"}</span>
+      <strong>${escapeHtml(state.user?.fullName || "Not signed in")}</strong>
+      <span>${escapeHtml(avatarUrl || "Default avatar")}</span>
     </div>
   `;
 }
@@ -444,28 +551,63 @@ function setAppMode() {
   showAppPage(state.currentPage);
 }
 
-function renderSummary(summary) {
+function filteredDashboardTotals(summary) {
+  const expenses = state.expenses.filter((expense) => isWithinDashboardWindow(expense.expenseDate || expense.expense_date || expense.createdAt || expense.created_at));
+  const payments = state.payments.filter((payment) => isWithinDashboardWindow(payment.paymentDate || payment.payment_date || payment.createdAt || payment.created_at));
+  if (!state.expenses.length && !state.payments.length) {
+    return {
+      totalExpensesMinor: summary.totalExpensesMinor,
+      pendingExpenseMinor: summary.pendingExpenseMinor,
+      totalCollectedMinor: summary.totalCollectedMinor,
+      totalPendingMinor: summary.totalPendingMinor,
+      cashInHandMinor: summary.cashInHandMinor,
+    };
+  }
+
+  const totalExpensesMinor = expenses
+    .filter((expense) => expense.status === "approved")
+    .reduce((sum, expense) => sum + (Number(expense.amountMinor) || 0), 0);
+  const pendingExpenseMinor = expenses
+    .filter((expense) => expense.status === "pending_approval")
+    .reduce((sum, expense) => sum + (Number(expense.amountMinor) || 0), 0);
+  const totalCollectedMinor = payments
+    .filter((payment) => payment.confirmationStatus === "confirmed")
+    .reduce((sum, payment) => sum + (Number(payment.amountMinor) || 0), 0);
+  const totalPendingMinor = payments
+    .filter((payment) => payment.confirmationStatus === "pending")
+    .reduce((sum, payment) => sum + (Number(payment.amountMinor) || 0), 0);
+  const cashInHandMinor = payments
+    .filter((payment) => payment.method === "cash" && payment.confirmationStatus === "confirmed")
+    .reduce((sum, payment) => sum + (Number(payment.amountMinor) || 0), 0);
+
+  return { totalExpensesMinor, pendingExpenseMinor, totalCollectedMinor, totalPendingMinor, cashInHandMinor };
+}
+
+function renderSummary(summary = state.summary) {
+  if (!summary) return;
+  state.summary = summary;
+  const totals = filteredDashboardTotals(summary);
   const cards = [
     ["Group", summary.house?.name || "Unknown"],
-    ["Total Expenses", money(summary.totalExpensesMinor)],
-    ["Pending Expenses", money(summary.pendingExpenseMinor)],
-    ["Collected", money(summary.totalCollectedMinor)],
-    ["Pending", money(summary.totalPendingMinor)],
-    ["Cash in Hand", money(summary.cashInHandMinor)],
+    ["Total Expenses", money(totals.totalExpensesMinor)],
+    ["Pending Expenses", money(totals.pendingExpenseMinor)],
+    ["Collected", money(totals.totalCollectedMinor)],
+    ["Pending", money(totals.totalPendingMinor)],
+    ["Cash in Hand", money(totals.cashInHandMinor)],
   ];
   const html = cards.map(([label, value]) => `
     <div class="summary-card">
-      <span>${label}</span>
-      <strong>${value}</strong>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
     </div>
   `).join("");
 
   if (els.dashboardSummaryCards) els.dashboardSummaryCards.innerHTML = html;
   if (els.summaryCards) els.summaryCards.innerHTML = html;
   if (els.userSummaryCards) els.userSummaryCards.innerHTML = html;
-  els.collectedMetric.textContent = money(summary.totalCollectedMinor);
-  els.pendingMetric.textContent = money(summary.totalPendingMinor);
-  els.cashMetric.textContent = money(summary.cashInHandMinor);
+  els.collectedMetric.textContent = money(totals.totalCollectedMinor);
+  els.pendingMetric.textContent = money(totals.totalPendingMinor);
+  els.cashMetric.textContent = money(totals.cashInHandMinor);
   if (els.houseName) els.houseName.textContent = summary.house?.name || "No group selected";
   if (els.userHouseName) els.userHouseName.textContent = summary.house?.name || "No group selected";
   els.topActiveGroup.textContent = summary.house?.name || "No group selected";
@@ -480,8 +622,9 @@ function memberLabel(member) {
 
 function avatarMeta(member) {
   const avatar = member?.user?.avatarUrl || member?.user?.avatar_url || "";
-  if (avatar && (avatar.startsWith("/avatars/") || avatar.startsWith("http://") || avatar.startsWith("https://"))) {
-    return { imageUrl: avatar, label: `${memberLabel(member)} avatar`, className: "avatar-image" };
+  const imageUrl = safeImageUrl(avatar);
+  if (imageUrl) {
+    return { imageUrl, label: `${memberLabel(member)} avatar`, className: "avatar-image" };
   }
   const map = {
     "avatar:dog": { icon: "DOG", label: "Dog avatar", className: "avatar-dog" },
@@ -496,9 +639,9 @@ function avatarMeta(member) {
 function avatarMarkup(member) {
   const avatar = avatarMeta(member);
   if (avatar.imageUrl) {
-    return `<span class="avatar ${avatar.className}" title="${avatar.label}"><img src="${avatar.imageUrl}" alt="${avatar.label}" /></span>`;
+    return `<span class="avatar ${escapeAttr(avatar.className)}" title="${escapeAttr(avatar.label)}"><img src="${escapeAttr(avatar.imageUrl)}" alt="${escapeAttr(avatar.label)}" /></span>`;
   }
-  return `<span class="avatar ${avatar.className}" title="${avatar.label}">${avatar.icon}</span>`;
+  return `<span class="avatar ${escapeAttr(avatar.className)}" title="${escapeAttr(avatar.label)}">${escapeHtml(avatar.icon)}</span>`;
 }
 
 function expenseLabel(expense) {
@@ -532,7 +675,7 @@ function cashHeldByMember(userId) {
 
 function populateExpenseSelectors(expenses = state.expenses) {
   const options = expenses.length
-    ? expenses.map((expense) => `<option value="${expense.id}">${expenseLabel(expense)}</option>`).join("")
+    ? expenses.map((expense) => optionHtml(expense.id, expenseLabel(expense))).join("")
     : `<option value="">No expenses available</option>`;
   [els.editExpenseId].forEach((select) => {
     if (select) select.innerHTML = options;
@@ -540,8 +683,8 @@ function populateExpenseSelectors(expenses = state.expenses) {
 }
 
 function populateDisputeTargetSelectors() {
-  const expenseOptions = state.expenses.map((expense) => `<option value="expense:${expense.id}">Expense - ${expenseLabel(expense)}</option>`);
-  const paymentOptions = state.payments.map((payment) => `<option value="payment:${payment.id}">Deposit - ${memberNameById(payment.payerUserId)} - ${money(payment.amountMinor)} - ${payment.confirmationStatus}</option>`);
+  const expenseOptions = state.expenses.map((expense) => optionHtml(`expense:${expense.id}`, `Expense - ${expenseLabel(expense)}`));
+  const paymentOptions = state.payments.map((payment) => optionHtml(`payment:${payment.id}`, `Deposit - ${memberNameById(payment.payerUserId)} - ${money(payment.amountMinor)} - ${payment.confirmationStatus}`));
   const options = [...expenseOptions, ...paymentOptions].join("") || `<option value="">No expenses or deposits available</option>`;
   [els.disputeTarget, els.userDisputeTarget].forEach((select) => {
     if (select) select.innerHTML = options;
@@ -577,10 +720,11 @@ function memberProfileHtml(member) {
     return sum + (ownContribution?.amountMinor || expense.amountMinor || 0);
   }, 0);
   const owedTotal = summary.owedSplits.reduce((sum, split) => sum + split.amountMinor, 0);
+  const relation = relationToCurrentUser(userId);
   const avatar = avatarMeta(member);
   const avatarImage = avatar.imageUrl
-    ? `<img src="${avatar.imageUrl}" alt="${avatar.label}" />`
-    : `<span class="member-profile-fallback ${avatar.className}">${avatar.icon}</span>`;
+    ? `<img src="${escapeAttr(avatar.imageUrl)}" alt="${escapeAttr(avatar.label)}" />`
+    : `<span class="member-profile-fallback ${escapeAttr(avatar.className)}">${escapeHtml(avatar.icon)}</span>`;
 
   return `
     <div class="member-profile-card">
@@ -588,22 +732,23 @@ function memberProfileHtml(member) {
       <div class="member-profile-head">
         <div class="member-profile-photo">${avatarImage}</div>
         <div>
-          <strong>${memberLabel(member)}</strong>
-          <span>${member.role || "flatmate"}</span>
+          <strong>${escapeHtml(memberLabel(member))}</strong>
+          <span>${escapeHtml(member.role || "flatmate")}</span>
         </div>
       </div>
       <div class="member-profile-stats">
         <div><span>Paid</span><strong>${money(paidTotal)}</strong></div>
         <div><span>Share</span><strong>${money(owedTotal)}</strong></div>
         <div><span>Net</span><strong class="${balanceClass(summary.balance)}">${signedMoney(summary.balance)}</strong></div>
+        ${relation ? `<div class="member-profile-relation"><span>${escapeHtml(relation.label)}</span><strong class="${escapeAttr(relation.className)}">${signedMoney(relation.amountMinor)}</strong></div>` : ""}
       </div>
       <div class="member-profile-section">
         <h4>Expenses Paid</h4>
-        ${summary.paidExpenses.length ? summary.paidExpenses.slice(0, 5).map((expense) => `<p>${expenseLabel(expense)}</p>`).join("") : "<p>No paid expenses yet.</p>"}
+        ${summary.paidExpenses.length ? summary.paidExpenses.slice(0, 5).map((expense) => `<p>${escapeHtml(expenseLabel(expense))}</p>`).join("") : "<p>No paid expenses yet.</p>"}
       </div>
       <div class="member-profile-section">
         <h4>Debts & Credits</h4>
-        ${[...summary.debtLines, ...summary.creditLines].length ? [...summary.debtLines, ...summary.creditLines].map((line) => `<p>${line}</p>`).join("") : "<p>Settled for now.</p>"}
+        ${[...summary.debtLines, ...summary.creditLines].length ? [...summary.debtLines, ...summary.creditLines].map((line) => `<p>${escapeHtml(line)}</p>`).join("") : "<p>Settled for now.</p>"}
       </div>
     </div>
   `;
@@ -642,14 +787,14 @@ function historyPreviewHtml(entry) {
   const timestamp = entry.createdAt ? new Date(entry.createdAt).toLocaleString("en-PK") : "Unknown";
   const metadata = entry.metadata && Object.keys(entry.metadata).length
     ? Object.entries(entry.metadata).slice(0, 4).map(([key, value]) => `
-      <div><span>${key}</span><strong>${typeof value === "object" ? JSON.stringify(value) : value}</strong></div>
+      <div><span>${escapeHtml(key)}</span><strong>${escapeHtml(typeof value === "object" ? JSON.stringify(value) : value)}</strong></div>
     `).join("")
     : `<div><span>Details</span><strong>No extra details</strong></div>`;
 
   return `
     <div class="history-preview-card">
-      <strong>${entry.actionType || "activity"}</strong>
-      <p>${actorName} - ${timestamp}</p>
+      <strong>${escapeHtml(entry.actionType || "activity")}</strong>
+      <p>${escapeHtml(actorName)} - ${escapeHtml(timestamp)}</p>
       ${metadata}
     </div>
   `;
@@ -694,7 +839,7 @@ function renderMemberControls(members = []) {
   );
   const options = activeMembers.map((member) => {
     const userId = member.userId || member.user_id;
-    return `<option value="${userId}">${memberLabel(member)}</option>`;
+    return optionHtml(userId, memberLabel(member));
   }).join("");
 
   els.managerPaidByUserId.innerHTML = options;
@@ -702,8 +847,8 @@ function renderMemberControls(members = []) {
     const userId = member.userId || member.user_id;
     return `
       <label>
-        <input type="checkbox" name="splitMemberIds" value="${userId}" checked />
-        <span>${memberLabel(member)}</span>
+        <input type="checkbox" name="splitMemberIds" value="${escapeAttr(userId)}" checked />
+        <span>${escapeHtml(memberLabel(member))}</span>
       </label>
     `;
   }).join("");
@@ -718,15 +863,13 @@ function renderMemberControls(members = []) {
   const groupOptions = newestFirst(state.memberships, ["house.createdAt", "joinedAt", "createdAt", "joined_at", "created_at"]).map((membership) => {
     const groupId = membership.houseId || membership.house_id;
     const groupName = membership.house?.name || groupId;
-    return `<option value="${groupId}" ${groupId === state.houseId ? "selected" : ""}>${groupName}</option>`;
+    return optionHtml(groupId, groupName, { selected: groupId === state.houseId });
   }).join("");
   els.paymentGroupSelect.innerHTML = groupOptions;
   els.userPaymentGroupSelect.innerHTML = groupOptions;
   els.paymentPayerUserId.innerHTML = options;
-  els.userPaymentPayerUserId.innerHTML = options;
   els.roleMemberUserId.innerHTML = options;
   els.paymentPayerUserId.value = currentUserOption ? state.user.id : activeMembers[0]?.userId || activeMembers[0]?.user_id || "";
-  els.userPaymentPayerUserId.value = currentUserOption ? state.user.id : activeMembers[0]?.userId || activeMembers[0]?.user_id || "";
 }
 
 function renderDashboardRoster(members = []) {
@@ -738,14 +881,12 @@ function renderDashboardRoster(members = []) {
     ? activeMembers.map((member) => {
         const userId = member.userId || member.user_id;
         const cashHeld = cashHeldByMember(userId);
-        const relation = relationToCurrentUser(userId);
         return `
-          <button type="button" class="avatar-card" data-member-profile="${userId}" aria-label="View ${memberLabel(member)} profile">
+          <button type="button" class="avatar-card" data-member-profile="${escapeAttr(userId)}" aria-label="View ${escapeAttr(memberLabel(member))} profile">
             ${avatarMarkup(member)}
             <div>
-              <strong>${memberLabel(member)}</strong>
-              <span>${member.role} <b class="${balanceClass(balanceFor(member))}">${signedMoney(balanceFor(member))}</b></span>
-              ${relation ? `<span class="member-relation ${relation.className}">${relation.label}: <b>${signedMoney(relation.amountMinor)}</b></span>` : ""}
+              <strong>${escapeHtml(memberLabel(member))}</strong>
+              <span>${escapeHtml(member.role)} <b class="${balanceClass(balanceFor(member))}">${signedMoney(balanceFor(member))}</b></span>
               ${member.role === "manager" ? `<span>Cash with him <b class="${balanceClass(cashHeld)}">${signedMoney(cashHeld)}</b></span>` : ""}
             </div>
           </button>
@@ -774,25 +915,25 @@ function renderHistory(history = []) {
         const metadata = entry.metadata && Object.keys(entry.metadata).length
           ? Object.entries(entry.metadata).map(([key, value]) => `
             <div class="history-detail-row">
-              <span>${key}</span>
-              <strong>${typeof value === "object" ? JSON.stringify(value) : value}</strong>
+              <span>${escapeHtml(key)}</span>
+              <strong>${escapeHtml(typeof value === "object" ? JSON.stringify(value) : value)}</strong>
             </div>
           `).join("")
           : `<div class="history-detail-row"><span>Details</span><strong>No extra details</strong></div>`;
         return `
-          <details class="ledger-item history-item" data-history-index="${index}">
+          <details class="ledger-item history-item" data-history-index="${escapeAttr(index)}">
             <summary class="ledger-item-top">
               <div>
-                <strong>${entry.actionType || "activity"}</strong>
-                <div class="list-item-meta">${actorName} - ${timestamp}</div>
+                <strong>${escapeHtml(entry.actionType || "activity")}</strong>
+                <div class="list-item-meta">${escapeHtml(actorName)} - ${escapeHtml(timestamp)}</div>
               </div>
-              <span class="status-pill">${entry.entityType || "event"}</span>
+              <span class="status-pill">${escapeHtml(entry.entityType || "event")}</span>
             </summary>
             <div class="history-detail">
-              <div class="history-detail-row"><span>Actor</span><strong>${actorName}</strong></div>
-              <div class="history-detail-row"><span>Action</span><strong>${entry.actionType || "activity"}</strong></div>
-              <div class="history-detail-row"><span>Type</span><strong>${entry.entityType || "event"}</strong></div>
-              <div class="history-detail-row"><span>Time</span><strong>${timestamp || "Unknown"}</strong></div>
+              <div class="history-detail-row"><span>Actor</span><strong>${escapeHtml(actorName)}</strong></div>
+              <div class="history-detail-row"><span>Action</span><strong>${escapeHtml(entry.actionType || "activity")}</strong></div>
+              <div class="history-detail-row"><span>Type</span><strong>${escapeHtml(entry.entityType || "event")}</strong></div>
+              <div class="history-detail-row"><span>Time</span><strong>${escapeHtml(timestamp || "Unknown")}</strong></div>
               ${metadata}
             </div>
           </details>
@@ -807,7 +948,7 @@ function balanceItem(balance) {
     <div class="ledger-item">
       <div class="ledger-item-top">
         <div>
-          <strong>${memberLabel(member) || "Member"}</strong>
+          <strong>${escapeHtml(memberLabel(member) || "Member")}</strong>
           <div class="list-item-meta">Member balance</div>
         </div>
         <strong class="${balanceClass(balance.balanceMinor)}">${signedMoney(balance.balanceMinor)}</strong>
@@ -848,35 +989,45 @@ function selectedSplitMemberIds(form) {
 function renderExpenses(expenses = []) {
   const sortedExpenses = newestFirst(expenses, ["createdAt", "updatedAt", "expenseDate", "created_at", "updated_at", "expense_date"]);
   state.expenses = sortedExpenses;
+  renderSummary();
   populateExpenseSelectors(sortedExpenses);
   populateDisputeTargetSelectors();
   els.expenseCount.textContent = `${sortedExpenses.length} total`;
   if (els.menuExpenseCount) els.menuExpenseCount.textContent = String(sortedExpenses.length);
   els.expenseList.innerHTML = sortedExpenses.length
-    ? sortedExpenses.map((expense) => `
-      <div class="ledger-item">
-        <div class="ledger-item-top">
-          <div>
-            <strong>${expense.title}</strong>
-            <div class="list-item-meta">${expense.expenseDate || ""} - ${expense.splitType} - ${expense.status}</div>
-            ${expense.payerContributions?.length ? `<div class="list-item-meta">Paid by ${expense.payerContributions.map((entry) => `${memberLabel(state.members.find((member) => (member.userId || member.user_id) === entry.userId))}: ${money(entry.amountMinor)}`).join(", ")}</div>` : ""}
+    ? sortedExpenses.map((expense) => {
+        const payerSummary = expense.payerContributions?.length
+          ? expense.payerContributions.map((entry) => {
+              const member = state.members.find((item) => (item.userId || item.user_id) === entry.userId);
+              return `${memberLabel(member)}: ${money(entry.amountMinor)}`;
+            }).join(", ")
+          : `${memberNameById(expense.paidByUserId || expense.paid_by_user_id)}: ${money(expense.amountMinor)}`;
+        return `
+          <div class="ledger-item">
+            <div class="ledger-item-top">
+              <div>
+                <strong>${escapeHtml(payerSummary)}</strong>
+                <div class="list-item-meta">${escapeHtml(expense.title || "Expense")}</div>
+                <div class="list-item-meta">${escapeHtml(expense.expenseDate || "")} - ${escapeHtml(expense.splitType)} - ${escapeHtml(expense.status)}</div>
+              </div>
+              <div class="expense-actions">
+                <strong>${money(expense.amountMinor)}</strong>
+                ${isManagement() && expense.status === "pending_approval" ? `
+                  <button type="button" data-approve-expense="${escapeAttr(expense.id)}">Approve</button>
+                  <button type="button" class="danger-btn" data-reject-expense="${escapeAttr(expense.id)}">Reject</button>
+                ` : ""}
+              </div>
+            </div>
           </div>
-          <div class="expense-actions">
-            <strong>${money(expense.amountMinor)}</strong>
-            ${isManagement() && expense.status === "pending_approval" ? `
-              <button type="button" data-approve-expense="${expense.id}">Approve</button>
-              <button type="button" class="danger-btn" data-reject-expense="${expense.id}">Reject</button>
-            ` : ""}
-          </div>
-        </div>
-      </div>
-    `).join("")
+        `;
+      }).join("")
     : `<div class="ledger-item">No expenses yet.</div>`;
 }
 
 function renderPayments(payments = []) {
   const sortedPayments = newestFirst(payments, ["createdAt", "paymentDate", "confirmedAt", "created_at", "payment_date", "confirmed_at"]);
   state.payments = sortedPayments;
+  renderSummary();
   populateDisputeTargetSelectors();
   els.paymentCount.textContent = `${sortedPayments.length} total`;
   if (els.menuPaymentCount) els.menuPaymentCount.textContent = String(sortedPayments.length);
@@ -888,15 +1039,15 @@ function renderPayments(payments = []) {
           <div class="ledger-item">
             <div class="ledger-item-top">
               <div>
-                <strong>${payerName}</strong>
-                <div class="list-item-meta">${payment.method} deposit - ${payment.confirmationStatus} - ${payment.paymentDate || ""}</div>
-                <div class="list-item-meta">To ${receiverName}</div>
+                <strong>${escapeHtml(payerName)}</strong>
+                <div class="list-item-meta">${escapeHtml(payment.method)} deposit - ${escapeHtml(payment.confirmationStatus)} - ${escapeHtml(payment.paymentDate || "")}</div>
+                <div class="list-item-meta">To ${escapeHtml(receiverName)}</div>
               </div>
               <div class="expense-actions">
                 <strong>${money(payment.amountMinor)}</strong>
                 ${isManagement() && payment.confirmationStatus === "pending" ? `
-                  <button type="button" data-approve-payment="${payment.id}">Approve</button>
-                  <button type="button" class="danger-btn" data-reject-payment="${payment.id}">Reject</button>
+                  <button type="button" data-approve-payment="${escapeAttr(payment.id)}">Approve</button>
+                  <button type="button" class="danger-btn" data-reject-payment="${escapeAttr(payment.id)}">Reject</button>
                 ` : ""}
               </div>
             </div>
@@ -917,29 +1068,29 @@ function renderDisputes(disputes = []) {
         const selectedSplitIds = new Set((expense?.splits || []).map((split) => split.userId));
         const memberOptions = state.members.map((member) => {
           const userId = member.userId || member.user_id;
-          return `<option value="${userId}">${memberLabel(member)}</option>`;
+          return optionHtml(userId, memberLabel(member));
         }).join("");
         const splitChecks = state.members.map((member) => {
           const userId = member.userId || member.user_id;
           return `
             <label>
-              <input type="checkbox" name="disputeSplitMemberIds" value="${userId}" ${selectedSplitIds.has(userId) ? "checked" : ""} />
-              <span>${memberLabel(member)}</span>
+              <input type="checkbox" name="disputeSplitMemberIds" value="${escapeAttr(userId)}" ${selectedSplitIds.has(userId) ? "checked" : ""} />
+              <span>${escapeHtml(memberLabel(member))}</span>
             </label>
           `;
         }).join("");
         return `
-          <details class="ledger-item dispute-editor" data-dispute-editor data-expense-id="${expense?.id || ""}" data-payment-id="${payment?.id || ""}">
+          <details class="ledger-item dispute-editor" data-dispute-editor data-expense-id="${escapeAttr(expense?.id || "")}" data-payment-id="${escapeAttr(payment?.id || "")}">
             <summary class="ledger-item-top">
               <div>
-                <strong>${dispute.reason}</strong>
-                <div class="list-item-meta">${dispute.status} - ${title} - opened by ${openedBy}</div>
+                <strong>${escapeHtml(dispute.reason)}</strong>
+                <div class="list-item-meta">${escapeHtml(dispute.status)} - ${escapeHtml(title)} - opened by ${escapeHtml(openedBy)}</div>
               </div>
-              <span class="status-pill">${dispute.status}</span>
+              <span class="status-pill">${escapeHtml(dispute.status)}</span>
             </summary>
             ${isManagement() && expense ? `
               <div class="dispute-edit-grid">
-                <input name="amountPkr" value="${(expense.amountMinor || 0) / 100}" placeholder="Amount in PKR" />
+                <input name="amountPkr" value="${escapeAttr((expense.amountMinor || 0) / 100)}" placeholder="Amount in PKR" />
                 <select name="splitType">
                   <option value="equal_all" ${expense.splitType === "equal_all" ? "selected" : ""}>Equal all</option>
                   <option value="equal_selected" ${expense.splitType === "equal_selected" ? "selected" : ""}>Equal selected</option>
@@ -954,7 +1105,7 @@ function renderDisputes(disputes = []) {
             ${isManagement() && payment ? `
               <div class="dispute-edit-grid">
                 <select name="payerUserId">${memberOptions}</select>
-                <input name="amountPkr" value="${(payment.amountMinor || 0) / 100}" placeholder="Amount in PKR" />
+                <input name="amountPkr" value="${escapeAttr((payment.amountMinor || 0) / 100)}" placeholder="Amount in PKR" />
                 <button type="button" data-update-dispute-payment>Update Disputed Deposit</button>
               </div>
             ` : ""}
@@ -984,8 +1135,8 @@ function renderSettlements(settlements = []) {
       <div class="ledger-item">
         <div class="ledger-item-top">
           <div>
-            <strong>${settlement.periodStart} to ${settlement.periodEnd}</strong>
-            <div class="list-item-meta">${settlement.algorithmVersion} - ${settlement.finalizedAt ? "finalized" : "open"}</div>
+            <strong>${escapeHtml(settlement.periodStart)} to ${escapeHtml(settlement.periodEnd)}</strong>
+            <div class="list-item-meta">${escapeHtml(settlement.algorithmVersion)} - ${settlement.finalizedAt ? "finalized" : "open"}</div>
           </div>
           <span class="status-pill">${settlement.finalizedAt ? "Finalized" : "Open"}</span>
         </div>
@@ -1023,7 +1174,7 @@ async function refreshHouse() {
         ...newestFirst(state.memberships, ["house.createdAt", "joinedAt", "createdAt", "joined_at", "created_at"]).map((membership) => {
           const houseId = membership.houseId || membership.house_id;
           const houseName = membership.house?.name || houseId;
-          return `<option value="${houseId}">${houseName}</option>`;
+          return optionHtml(houseId, houseName);
         }),
       ].join("");
     }
@@ -1067,7 +1218,7 @@ async function refreshHouse() {
     ...newestFirst(state.memberships, ["house.createdAt", "joinedAt", "createdAt", "joined_at", "created_at"]).map((membership) => {
       const houseId = membership.houseId || membership.house_id;
       const houseName = membership.house?.name || houseId;
-      return `<option value="${houseId}" ${houseId === state.houseId ? "selected" : ""}>${houseName}</option>`;
+      return optionHtml(houseId, houseName, { selected: houseId === state.houseId });
     }),
   ].join("");
 }
@@ -1164,7 +1315,6 @@ async function createExpense(form) {
       expenseDate: form.expenseDate.value,
       splitType,
       note: form.note.value,
-      receiptUrl: form.receiptUrl.value || null,
       paidByUserId: form.paidByUserId.value || state.user.id,
       selectedUserIds,
       participantUserIds: selectedUserIds,
@@ -1188,7 +1338,6 @@ async function submitUserExpense(form) {
       expenseDate: form.expenseDate.value,
       splitType: "equal_all",
       note: form.note.value,
-      receiptUrl: form.receiptUrl.value || null,
       requiresApproval: true,
     },
   });
@@ -1203,7 +1352,7 @@ async function createPayment(form) {
   await api(`/houses/${groupId}/payments`, {
     method: "POST",
     body: {
-      payerUserId: form.payerUserId.value,
+      payerUserId: form.payerUserId?.value || state.user.id,
       receiverUserId: receiver?.userId || receiver?.user_id || state.user.id,
       amountPkr: Number(form.amountPkr.value),
       method: "cash",
@@ -1246,7 +1395,7 @@ async function changePassword(form) {
       newPassword: form.newPassword.value,
     },
   });
-  showToast("Password changed");
+  clearSession({ message: "Password changed. Please login again." });
 }
 
 async function updateProfile(form) {
@@ -1356,7 +1505,14 @@ async function generateSettlement() {
   await refreshHouse();
 }
 
-function logout() {
+async function logout() {
+  if (state.token) {
+    try {
+      await api("/auth/logout", { method: "POST" });
+    } catch {
+      // Local cleanup still protects the browser when the server session is already expired.
+    }
+  }
   clearSession();
 }
 
@@ -1368,10 +1524,34 @@ function bindForm(id, handler, options = {}) {
     event.preventDefault();
     try {
       await handler(form);
-      if (shouldReset) form.reset();
+      if (shouldReset) {
+        form.reset();
+        syncOtherTitleField(form);
+      }
     } catch (error) {
       showToast(error.message, "error");
     }
+  });
+}
+
+function syncOtherTitleField(form) {
+  const titleSelect = form?.querySelector('select[name="title"]');
+  const customTitle = form?.querySelector('input[name="customTitle"]');
+  if (!titleSelect || !customTitle) return;
+  const showCustomTitle = titleSelect.value === "Other";
+  customTitle.hidden = !showCustomTitle;
+  customTitle.style.display = showCustomTitle ? "" : "none";
+  customTitle.required = showCustomTitle;
+  if (!showCustomTitle) customTitle.value = "";
+}
+
+function bindOtherTitleFields() {
+  document.querySelectorAll("form").forEach((form) => {
+    const titleSelect = form.querySelector('select[name="title"]');
+    const customTitle = form.querySelector('input[name="customTitle"]');
+    if (!titleSelect || !customTitle) return;
+    syncOtherTitleField(form);
+    titleSelect.addEventListener("change", () => syncOtherTitleField(form));
   });
 }
 
@@ -1389,6 +1569,12 @@ bindForm("paymentForm", createPayment);
 bindForm("userPaymentForm", createPayment);
 bindForm("disputeForm", createDispute);
 bindForm("userDisputeForm", createDispute);
+bindOtherTitleFields();
+syncDashboardTimeFilter();
+
+els.dashboardTimeWindow?.addEventListener("change", updateDashboardTimeFilter);
+els.dashboardStartDate?.addEventListener("change", updateDashboardTimeFilter);
+els.dashboardEndDate?.addEventListener("change", updateDashboardTimeFilter);
 
 els.logoutBtn?.addEventListener("click", logout);
 els.topLogoutBtn?.addEventListener("click", logout);

@@ -1,23 +1,15 @@
 import { ApiError } from "../errors.js";
 import { createId } from "../id.js";
+import { isGlobalAdminUserId } from "../admin.js";
 
 function hasManagementRole(store, houseId, userId) {
-  if (isGlobalAdmin(store, userId)) return true;
+  if (isGlobalAdminUserId(store, userId)) return true;
   const member = store.houseMembers.get(`${houseId}:${userId}`);
   return ["admin", "manager"].includes(member?.role) && member.status === "active";
 }
 
-function isGlobalAdmin(store, userId) {
-  const user = store.users.get(userId);
-  const adminContacts = String(process.env.GLOBAL_ADMIN_CONTACTS || "zahid-admin")
-    .split(",")
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
-  return Boolean(user?.contact && adminContacts.includes(String(user.contact).toLowerCase()));
-}
-
 function assertHouseMember(store, houseId, userId) {
-  if (isGlobalAdmin(store, userId) && store.houses.has(houseId)) {
+  if (isGlobalAdminUserId(store, userId) && store.houses.has(houseId)) {
     return { userId, role: "admin", status: "active", isGlobalAdmin: true };
   }
   const member = store.houseMembers.get(`${houseId}:${userId}`);
@@ -37,7 +29,7 @@ export function createPaymentService(store, logActivity, expenseService, persist
         throw new ApiError(400, "amountMinor must be a positive integer");
       }
 
-      if (isGlobalAdmin(store, payload.payerUserId) || isGlobalAdmin(store, payload.receiverUserId)) {
+      if (isGlobalAdminUserId(store, payload.payerUserId) || isGlobalAdminUserId(store, payload.receiverUserId)) {
         throw new ApiError(400, "Global admin cannot be selected as a payment member");
       }
       assertHouseMember(store, houseId, payload.payerUserId);
@@ -144,7 +136,7 @@ export function createPaymentService(store, logActivity, expenseService, persist
 
       const payerUserId = payload.payerUserId || payment.payerUserId;
       const receiverUserId = payload.receiverUserId || payment.receiverUserId;
-      if (isGlobalAdmin(store, payerUserId) || isGlobalAdmin(store, receiverUserId)) {
+      if (isGlobalAdminUserId(store, payerUserId) || isGlobalAdminUserId(store, receiverUserId)) {
         throw new ApiError(400, "Global admin cannot be selected as a payment member");
       }
       assertHouseMember(store, houseId, payerUserId);

@@ -1,30 +1,22 @@
 import { ApiError } from "../errors.js";
 import { createId } from "../id.js";
 import { calculateExpenseSplits } from "../split.js";
+import { isGlobalAdminUserId } from "../admin.js";
 
 function hasManagementRole(store, houseId, userId) {
-  if (isGlobalAdmin(store, userId)) return true;
+  if (isGlobalAdminUserId(store, userId)) return true;
   const member = store.houseMembers.get(`${houseId}:${userId}`);
   return ["admin", "manager"].includes(member?.role) && member.status === "active";
 }
 
 function isAdmin(store, houseId, userId) {
-  if (isGlobalAdmin(store, userId)) return true;
+  if (isGlobalAdminUserId(store, userId)) return true;
   const member = store.houseMembers.get(`${houseId}:${userId}`);
   return member?.role === "admin" && member.status === "active";
 }
 
-function isGlobalAdmin(store, userId) {
-  const user = store.users.get(userId);
-  const adminContacts = String(process.env.GLOBAL_ADMIN_CONTACTS || "zahid-admin")
-    .split(",")
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
-  return Boolean(user?.contact && adminContacts.includes(String(user.contact).toLowerCase()));
-}
-
 function assertHouseMember(store, houseId, userId) {
-  if (isGlobalAdmin(store, userId) && store.houses.has(houseId)) {
+  if (isGlobalAdminUserId(store, userId) && store.houses.has(houseId)) {
     return { userId, role: "admin", status: "active", isGlobalAdmin: true };
   }
   const member = store.houseMembers.get(`${houseId}:${userId}`);
@@ -59,7 +51,7 @@ export function createExpenseService(store, logActivity, persistence) {
     const balances = new Map();
 
     for (const member of store.houseMembers.values()) {
-      if (member.houseId === houseId && member.status === "active" && !isGlobalAdmin(store, member.userId)) {
+      if (member.houseId === houseId && member.status === "active" && !isGlobalAdminUserId(store, member.userId)) {
         balances.set(member.userId, 0);
       }
     }
@@ -93,7 +85,7 @@ export function createExpenseService(store, logActivity, persistence) {
       const participantUserIds = payload.participantUserIds?.length
         ? payload.participantUserIds
         : [...store.houseMembers.values()]
-            .filter((member) => member.houseId === houseId && member.status === "active" && !isGlobalAdmin(store, member.userId))
+            .filter((member) => member.houseId === houseId && member.status === "active" && !isGlobalAdminUserId(store, member.userId))
             .map((member) => member.userId);
 
       const splits = calculateExpenseSplits({
@@ -109,7 +101,7 @@ export function createExpenseService(store, logActivity, persistence) {
         currency: payload.currency || house?.baseCurrency || "PKR",
       });
       for (const split of splits) {
-        if (isGlobalAdmin(store, split.userId)) {
+        if (isGlobalAdminUserId(store, split.userId)) {
           throw new ApiError(400, "Global admin cannot be included in expense splits");
         }
         assertHouseMember(store, houseId, split.userId);
@@ -125,7 +117,7 @@ export function createExpenseService(store, logActivity, persistence) {
       if (!house) throw new ApiError(404, "House not found");
 
       const paidByUserId = actorCanManage ? payload.paidByUserId || actorUserId : actorUserId;
-      if (isGlobalAdmin(store, paidByUserId)) {
+      if (isGlobalAdminUserId(store, paidByUserId)) {
         throw new ApiError(400, "Global admin cannot be selected as expense payer");
       }
       assertHouseMember(store, houseId, paidByUserId);
@@ -147,7 +139,7 @@ export function createExpenseService(store, logActivity, persistence) {
         throw new ApiError(400, "Payer contributions must equal the expense total");
       }
       for (const contribution of payerContributions) {
-        if (isGlobalAdmin(store, contribution.userId)) {
+        if (isGlobalAdminUserId(store, contribution.userId)) {
           throw new ApiError(400, "Global admin cannot be selected as expense payer");
         }
         if (!contribution.userId || !Number.isFinite(contribution.amountMinor) || contribution.amountMinor <= 0) {

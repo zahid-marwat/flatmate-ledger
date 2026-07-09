@@ -49,8 +49,9 @@ export function createSupabaseClient() {
     return request(table, { method: "POST", body: rows });
   }
 
-  async function upsert(table, rows) {
-    return request(table, {
+  async function upsert(table, rows, { onConflict = "" } = {}) {
+    const path = onConflict ? `${table}?on_conflict=${encodeURIComponent(onConflict)}` : table;
+    return request(path, {
       method: "POST",
       body: rows,
       headers: {
