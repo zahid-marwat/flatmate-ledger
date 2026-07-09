@@ -353,12 +353,11 @@ body { position: relative; overflow-x: hidden; }
   transform: scale(1.05) rotate(10deg);
 }
 
-.menu-toggle img {
-  width: 22px;
-  height: 22px;
-  object-fit: cover;
-  border-radius: 6px;
-  opacity: 0.9;
+.menu-toggle-lines {
+  color: #dbe7f7;
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 900;
 }
 
 .menu-toggle-arrow {
@@ -434,6 +433,14 @@ body { position: relative; overflow-x: hidden; }
   place-items: center;
   color: #b8c1ce;
   font-size: 20px;
+}
+
+.menu-icon img {
+  width: 20px;
+  height: 20px;
+  object-fit: cover;
+  border-radius: 5px;
+  opacity: 0.9;
 }
 
 .menu-item small {

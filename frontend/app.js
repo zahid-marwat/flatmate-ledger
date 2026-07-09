@@ -63,8 +63,6 @@ const els = {
   signedInUser: $("#signedInUser"),
   signedInRole: $("#signedInRole"),
   topSignedInUser: $("#topSignedInUser"),
-  tokenState: $("#tokenState"),
-  logoutBtn: $("#logoutBtn"),
   topLogoutBtn: $("#topLogoutBtn"),
   houseSelect: $("#houseSelect"),
   houseName: $("#houseName"),
@@ -352,7 +350,6 @@ function setToken(token) {
     localStorage.removeItem("flatmateLedgerToken");
     localStorage.removeItem("flatmateLedgerLastActiveAt");
   }
-  els.tokenState.textContent = token ? token : "Not signed in";
 }
 
 function touchSession() {
@@ -1576,7 +1573,6 @@ els.dashboardTimeWindow?.addEventListener("change", updateDashboardTimeFilter);
 els.dashboardStartDate?.addEventListener("change", updateDashboardTimeFilter);
 els.dashboardEndDate?.addEventListener("change", updateDashboardTimeFilter);
 
-els.logoutBtn?.addEventListener("click", logout);
 els.topLogoutBtn?.addEventListener("click", logout);
 
 els.sidebarDisplayBtn?.addEventListener("click", () => {
@@ -1584,8 +1580,7 @@ els.sidebarDisplayBtn?.addEventListener("click", () => {
 });
 
 els.menuToggle?.addEventListener("click", () => {
-  showSettingsPage("profile");
-  showAppPage("settings");
+  setSidebarCollapsed(!state.sidebarCollapsed);
 });
 
 els.houseSelect.addEventListener("change", async () => {

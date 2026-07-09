@@ -39,8 +39,8 @@
         <nav class="side-menu">
           <div class="side-menu-head">
             <strong>LEDGER<span>PRO</span></strong>
-            <button type="button" class="menu-toggle" aria-label="Open settings">
-              <img src="/icons/settings.jpg" alt="" />
+            <button type="button" class="menu-toggle" aria-label="Hide or show sidebar options">
+              <span class="menu-toggle-lines" aria-hidden="true">☰</span>
               <span class="menu-toggle-arrow" aria-hidden="true">‹</span>
             </button>
           </div>
@@ -77,9 +77,13 @@
             <span>Settlement</span>
           </button>
           <button type="button" class="menu-item" data-jump="history">
-            <span class="menu-icon">⚙</span>
+            <span class="menu-icon">≡</span>
             <span>History</span>
             <small id="menuHistoryCount">0</small>
+          </button>
+          <button type="button" class="menu-item" data-jump="settings">
+            <span class="menu-icon"><img src="/icons/settings.jpg" alt="" /></span>
+            <span>Settings</span>
           </button>
         </nav>
 
@@ -188,7 +192,7 @@
           <div class="panel-head">
             <div>
               <h3>Settings</h3>
-              <span>Profile, icon, password, display, and session controls</span>
+              <span>Profile, icon, password, and display controls</span>
             </div>
             <div class="settings-user-card">
               <span id="signedInUser">Not signed in</span>
@@ -202,7 +206,6 @@
               <button type="button" class="settings-tab" data-settings-tab="avatar">Icon</button>
               <button type="button" class="settings-tab" data-settings-tab="password">Password</button>
               <button type="button" class="settings-tab" data-settings-tab="display">Sidebar</button>
-              <button type="button" class="settings-tab" data-settings-tab="session">Session</button>
             </nav>
 
             <div class="settings-pages">
@@ -264,15 +267,6 @@
                 </div>
                 <p class="muted-copy">Use compact mode when you want more dashboard space. The setting is saved on this browser.</p>
                 <button id="sidebarDisplayBtn" type="button">Hide Sidebar Options</button>
-              </article>
-
-              <article class="settings-card" data-settings-page="session" hidden>
-                <div class="panel-head">
-                  <h4>Session</h4>
-                  <span>Current login token and logout</span>
-                </div>
-                <code id="tokenState">Not signed in</code>
-                <button id="logoutBtn" type="button" class="subtle-space">Logout</button>
               </article>
             </div>
           </div>
